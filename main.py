@@ -38,6 +38,6 @@ if __name__ == "__main__":
         uvicorn.run("main:app", host="0.0.0.0", port=8000, log_level="error")
     except KeyboardInterrupt:
         print("Shutting down server...")
-        multiprocessing.current_process().terminate()
+        mp.current_process().terminate()
     finally:
         print("Server has been shut down.")
