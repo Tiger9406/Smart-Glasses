@@ -1,0 +1,6 @@
+fastapi[standard]>=0.128.0
+uvicorn[standard]>=0.40.0
+
+#computer vision stuff
+numpy>=2.4.1
+opencv-python-headless>=4.13.0.90
