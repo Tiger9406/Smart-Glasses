@@ -1,7 +1,6 @@
 #entry point
 
 import uvicorn
-from api.server import app
 import multiprocessing as mp
 
 import asyncio
