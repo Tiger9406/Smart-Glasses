@@ -1,4 +1,4 @@
 .env
-legacy/
+docker_legacy/
 
 .venv/
