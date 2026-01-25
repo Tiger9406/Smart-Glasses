@@ -7,6 +7,8 @@ import asyncio
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
+from api.routes import setup_routes
+
 from core.shared_mem import SharedMem
 from core.coordinator import Coordinator
 from workers.audio import AudioWorker
@@ -15,9 +17,8 @@ from workers.vision import VisionWorker
 # defines lifespan; handles startup and shutdown events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize resources here
-    # shared mem
-    shared_mem = SharedMem()
+
+    shared_mem = SharedMem() #shared mem is 3 queues; again can look into shared_mem or direct pipies if this too slow
     brain = Coordinator(shared_mem.results_queue)
     audio_worker = AudioWorker(shared_mem.audio_queue)
     vision_worker = VisionWorker(shared_mem.vision_queue)
@@ -36,7 +37,8 @@ async def lifespan(app: FastAPI):
 def start_server():
     app=FastAPI(lifespan=lifespan)
 
-    #gotta define the endpoints for receiving & publishing results here
+    #define routes; right now only websocket streamed in
+    setup_routes(app)
 
     return app
 
