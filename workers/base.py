@@ -13,6 +13,7 @@ class BaseWorker(mp.Process):
         self.output_queue=output_queue
 
     def run(self):
+        self.setup()
         while True:
             if not self.input_queue.empty():
                 item = self.input_queue.get()
@@ -27,3 +28,7 @@ class BaseWorker(mp.Process):
     def process(self, data):
         #to be defined in children class
         raise NotImplementedError
+    
+    def setup(self):
+        #to be overriden to load any resources
+        pass

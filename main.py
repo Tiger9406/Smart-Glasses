@@ -10,6 +10,8 @@ from contextlib import asynccontextmanager
 
 from core.shared_mem import SharedMem
 from core.coordinator import Coordinator
+from workers.audio import AudioWorker
+from workers.vision import VisionWorker
 
 # defines lifespan; handles startup and shutdown events
 @asynccontextmanager
@@ -18,25 +20,26 @@ async def lifespan(app: FastAPI):
     # shared mem
     shared_mem = SharedMem()
     brain = Coordinator(shared_mem.results_queue)
-    
-    #vision
-    #audio
+    audio_worker = AudioWorker(shared_mem.audio_queue)
+    vision_worker = VisionWorker(shared_mem.vision_queue)
 
     brain.start()
-
-
+    audio_worker.start()
+    vision_worker.start()
 
     yield #app running after this
 
-    # Cleanup resources here
+    brain.terminate()
+    audio_worker.terminate()
+    vision_worker.terminate()
 
 
 def start_server():
     app=FastAPI(lifespan=lifespan)
-    return app
 
-    #initialize different workers
-    #initialize a coordinator
+    #gotta define the endpoints for receiving & publishing results here
+
+    return app
 
 
 
