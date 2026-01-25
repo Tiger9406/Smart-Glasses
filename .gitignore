@@ -2,3 +2,4 @@
 docker_legacy/
 
 .venv/
+__pycache__/

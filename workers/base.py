@@ -23,7 +23,7 @@ class BaseWorker(mp.Process):
                     self.output_queue.put(result)
 
             #have a time out to prevent overworking cpu upon task spike
-            time.sleep(0,001)
+            time.sleep(0.001)
 
     def process(self, data):
         #to be defined in children class

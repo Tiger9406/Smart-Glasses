@@ -20,14 +20,18 @@ async def lifespan(app: FastAPI):
 
     shared_mem = SharedMem() #shared mem is 3 queues; again can look into shared_mem or direct pipies if this too slow
     brain = Coordinator(shared_mem.results_queue)
-    audio_worker = AudioWorker(shared_mem.audio_queue)
-    vision_worker = VisionWorker(shared_mem.vision_queue)
+    audio_worker = AudioWorker(shared_mem.audio_queue, shared_mem.results_queue)
+    vision_worker = VisionWorker(shared_mem.vision_queue, shared_mem.results_queue)
 
     brain.start()
     audio_worker.start()
     vision_worker.start()
 
+    
+
     yield #app running after this
+
+    print("Cleaning resources")
 
     brain.terminate()
     audio_worker.terminate()
@@ -39,7 +43,6 @@ def start_server():
 
     #define routes; right now only websocket streamed in
     setup_routes(app)
-
     return app
 
 
