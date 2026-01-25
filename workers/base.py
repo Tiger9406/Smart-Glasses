@@ -7,7 +7,7 @@ import multiprocessing as mp
 import time
 
 class BaseWorker(mp.Process):
-    def __init__(self, input_queue, output_queue): #gotta comm via queue; could look into shared memory if queue too slow
+    def __init__(self, input_queue, output_queue): #gotta comm via queue; could look into shared memory or pipe if queue too slow
         super().__init__(daemon=True)
         self.input_queue=input_queue
         self.output_queue=output_queue

@@ -8,14 +8,23 @@ import asyncio
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
+from core.shared_mem import SharedMem
+from core.coordinator import Coordinator
+
 # defines lifespan; handles startup and shutdown events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize resources here
     # shared mem
+    shared_mem = SharedMem()
+    brain = Coordinator(shared_mem.results_queue)
+    
     #vision
     #audio
-    #coordinator
+
+    brain.start()
+
+
 
     yield #app running after this
 
