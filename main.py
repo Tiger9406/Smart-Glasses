@@ -33,6 +33,7 @@ async def lifespan(app: FastAPI):
     yield #app running after this
 
     print("Cleaning resources")
+    #terminate any running processes
 
     brain.terminate()
     audio_worker.terminate()
