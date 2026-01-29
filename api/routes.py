@@ -2,6 +2,7 @@
 #define endpoints
 
 from fastapi import APIRouter, WebSocket, Request
+from core import config
 
 router = APIRouter()
 
@@ -25,11 +26,11 @@ async def stream_ingest(websocket: WebSocket):
         while True:
             data = await websocket.receive_bytes()
             if not data: continue
-            header = data[0]
+            header = data[0:1]
             payload=data[1:]
-            if header==1:
+            if header==config.HEADER_VIDEO:
                 system.vision_queue.put(payload)
-            elif header == 2:
+            elif header == config.HEADER_AUDIO:
                 system.audio_queue.put(payload)
             else:
                 print("Unkonwn header type")

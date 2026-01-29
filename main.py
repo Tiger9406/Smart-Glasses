@@ -12,6 +12,7 @@ from core.shared_mem import SharedMem
 from core.coordinator import Coordinator
 from workers.audio import AudioWorker
 from workers.vision import VisionWorker
+from core import config
 
 # defines lifespan; handles startup and shutdown events
 @asynccontextmanager
@@ -51,7 +52,7 @@ app=start_server()
 if __name__ == "__main__":
     #start subprocesses & then start server
     try:
-        uvicorn.run("main:app", host="0.0.0.0", port=8000, log_level="error")
+        uvicorn.run("main:app", host=config.HOST, port=config.PORT, log_level="error")
     except KeyboardInterrupt:
         print("Shutting down server...")
         mp.current_process().terminate()
