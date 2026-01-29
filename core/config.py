@@ -3,7 +3,7 @@ HOST = "0.0.0.0"
 PORT = 8000
 SERVER_URL = f"ws://localhost:{PORT}/stream"
 
-HEADER_VIDEO = b'\x01'
+HEADER_VISION = b'\x01'
 HEADER_AUDIO = b'\x02'
 
 RESOLUTION = (800, 600) 

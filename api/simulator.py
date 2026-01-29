@@ -5,18 +5,19 @@ import os
 import wave
 from core import config
 
-
-async def visual_stream(websocket):
+#defining vision
+async def vision_stream(websocket):
     with open(config.TARGET_IMAGE, "rb") as f:
         image_bytes = f.read()
     print(f"Loaded {len(image_bytes)} bytes of image from {config.TARGET_IMAGE}")
     while True:
         start_time = time.time()
-        await websocket.send(config.HEADER_VIDEO+ image_bytes)
+        await websocket.send(config.HEADER_VISION+ image_bytes)
         process_time = time.time()-start_time
         sleep_time = max(0, config.FRAME_DELAY-process_time)
         await asyncio.sleep(sleep_time)
 
+#async func definint audio stream output
 async def audio_stream(websocket):
     print(f"Starting pcm stream target audio file {config.TARGET_AUDIO}")
     wf = wave.open(config.TARGET_AUDIO, 'rb')
@@ -59,7 +60,7 @@ async def stream_glasses_data():
     async with websockets.connect(config.SERVER_URL) as websocket:
         print("Streaming now")
         await asyncio.gather( #runs these two async funcs on same thread
-            visual_stream(websocket),
+            vision_stream(websocket),
             audio_stream(websocket)
         )
 
