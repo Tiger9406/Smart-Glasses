@@ -8,4 +8,5 @@ class AudioWorker(BaseWorker):
 
     def process(self, raw_bytes):
         #preprocess incoming data; dk form yet
+        print(f"audio worker received & processing audio file of size {len(raw_bytes)}")
         pass

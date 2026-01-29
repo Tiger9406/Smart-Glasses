@@ -7,4 +7,5 @@ class VisionWorker(BaseWorker):
 
     def process(self, raw_bytes):
         #preprocess incoming data; dk form yet
+        print(f"vision worker received & processing frame of size {len(raw_bytes)}")
         pass
