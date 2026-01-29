@@ -3,7 +3,6 @@
 import uvicorn
 import multiprocessing as mp
 
-import asyncio
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
@@ -19,6 +18,9 @@ from workers.vision import VisionWorker
 async def lifespan(app: FastAPI):
 
     shared_mem = SharedMem() #shared mem is 3 queues; again can look into shared_mem or direct pipies if this too slow
+
+    app.state.system=shared_mem
+
     brain = Coordinator(shared_mem.results_queue)
     audio_worker = AudioWorker(shared_mem.audio_queue, shared_mem.results_queue)
     vision_worker = VisionWorker(shared_mem.vision_queue, shared_mem.results_queue)
@@ -26,8 +28,6 @@ async def lifespan(app: FastAPI):
     brain.start()
     audio_worker.start()
     vision_worker.start()
-
-    
 
     yield #app running after this
 
