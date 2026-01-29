@@ -17,17 +17,22 @@ def is_vision_data(data: bytes):
 @router.websocket("/stream")
 async def stream_ingest(websocket: WebSocket):
     await websocket.accept()
+    print("Client connected to stream endpoint")
 
     system = websocket.app.state.system
 
     try:
         while True:
             data = await websocket.receive_bytes()
-            if data:
-                if is_vision_data(data):
-                    system.video_queue.put(data)
-                else:
-                    system.audio_queue.put(data)
+            if not data: continue
+            header = data[0]
+            payload=data[1:]
+            if header==1:
+                system.vision_queue.put(payload)
+            elif header == 2:
+                system.audio_queue.put(payload)
+            else:
+                print("Unkonwn header type")
 
     except Exception:
          pass
