@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
 
     shared_mem = SharedMem() #shared mem is 3 queues; again can look into shared_mem or direct pipies if this too slow
 
-    app.state.system=shared_mem
+    app.state.system = shared_mem
 
     brain = Coordinator(shared_mem.results_queue)
     audio_worker = AudioWorker(shared_mem.audio_queue, shared_mem.results_queue)

@@ -25,8 +25,8 @@ async def stream_ingest(websocket: WebSocket):
 
             #get data type & put into respective queues
             header = data[0:1]
-            payload=data[1:]
-            if header==config.HEADER_VISION:
+            payload = data[1:]
+            if header == config.HEADER_VISION:
                 system.vision_queue.put(payload)
             elif header == config.HEADER_AUDIO:
                 system.audio_queue.put(payload)
