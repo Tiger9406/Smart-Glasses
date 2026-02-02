@@ -1,12 +1,11 @@
-
 HOST = "0.0.0.0"
 PORT = 8000
 SERVER_URL = f"ws://localhost:{PORT}/stream"
 
-HEADER_VISION = b'\x01'
-HEADER_AUDIO = b'\x02'
+HEADER_VISION = b"\x01"
+HEADER_AUDIO = b"\x02"
 
-RESOLUTION = (800, 600) 
+RESOLUTION = (800, 600)
 FPS = 20
 FRAME_DELAY = 1.0 / FPS
 

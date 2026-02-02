@@ -1,24 +1,23 @@
-#entry point
+# entry point
 
-import uvicorn
 import multiprocessing as mp
-
-from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
-from api.routes import setup_routes
+import uvicorn
+from fastapi import FastAPI
 
-from core.shared_mem import SharedMem
+from api.routes import setup_routes
+from core import config
 from core.coordinator import Coordinator
+from core.shared_mem import SharedMem
 from workers.audio import AudioWorker
 from workers.vision import VisionWorker
-from core import config
+
 
 # defines lifespan; handles startup and shutdown events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
-    shared_mem = SharedMem() #shared mem is 3 queues; again can look into shared_mem or direct pipies if this too slow
+    shared_mem = SharedMem()  # shared mem is 3 queues; again can look into shared_mem or direct pipies if this too slow
 
     app.state.system = shared_mem
 
@@ -30,10 +29,10 @@ async def lifespan(app: FastAPI):
     audio_worker.start()
     vision_worker.start()
 
-    yield #app running after this
+    yield  # app running after this
 
     print("Cleaning resources")
-    #terminate any running processes
+    # terminate any running processes
 
     brain.terminate()
     audio_worker.terminate()
@@ -41,17 +40,16 @@ async def lifespan(app: FastAPI):
 
 
 def start_server():
-    app=FastAPI(lifespan=lifespan)
+    app = FastAPI(lifespan=lifespan)
 
-    #define routes; right now only websocket streamed in
+    # define routes; right now only websocket streamed in
     setup_routes(app)
     return app
 
 
-
-app=start_server()
+app = start_server()
 if __name__ == "__main__":
-    #start subprocesses & then start server
+    # start subprocesses & then start server
     try:
         uvicorn.run("main:app", host=config.HOST, port=config.PORT, log_level="error")
     except KeyboardInterrupt:
