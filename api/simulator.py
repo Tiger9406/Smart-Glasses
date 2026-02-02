@@ -29,7 +29,7 @@ async def vision_stream(websocket):
             await asyncio.sleep(sleep_time)
     except asyncio.CancelledError:
         print("Vision stream task cancelled")
-        pass
+        raise
     except Exception as e:
         print(f"Error in vision stream: {e}")
 
@@ -116,7 +116,7 @@ async def stream_glasses_data():
                     pass
 
     except websockets.exceptions.ConnectionRefusedError:
-        print("Connection failed & connect not connect to target server url")
+        print("Connection failed & could not connect to target server url")
     except Exception as e:
         print(f"Global error: {e}")
 
