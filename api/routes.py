@@ -1,7 +1,7 @@
 
 #define endpoints
 
-from fastapi import APIRouter, WebSocket, Request
+from fastapi import APIRouter, WebSocket
 from core import config
 
 router = APIRouter()
@@ -21,7 +21,8 @@ async def stream_ingest(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_bytes()
-            if not data: continue
+            if not data: 
+                continue
 
             #get data type & put into respective queues
             header = data[0:1]
