@@ -1,6 +1,7 @@
 from workers.base import BaseWorker
 
 
+
 class VisionWorker(BaseWorker):
     def setup(self, vision_command_queue):
         # load whatever initial vision model u need; keep in mind single core so not gonna be performant

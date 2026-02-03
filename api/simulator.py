@@ -1,0 +1,128 @@
+import asyncio
+import os
+import time
+import wave
+
+import websockets
+
+from core import config
+
+
+# defining vision
+async def vision_stream(websocket):
+    try:
+        with open(config.TARGET_IMAGE, "rb") as f:
+            image_bytes = f.read()
+
+        print(f"Loaded {len(image_bytes)} bytes of image from {config.TARGET_IMAGE}")
+
+        while True:
+            start_time = time.time()
+            try:
+                await websocket.send(config.HEADER_VISION + image_bytes)
+            except websockets.exceptions.ConnectionClosed:
+                print("Vision stream connection closed by server")
+                break
+
+            process_time = time.time() - start_time
+            sleep_time = max(0, config.FRAME_DELAY - process_time)
+            await asyncio.sleep(sleep_time)
+    except asyncio.CancelledError:
+        print("Vision stream task cancelled")
+        raise
+    except Exception as e:
+        print(f"Error in vision stream: {e}")
+
+
+# async func definint audio stream output
+async def audio_stream(websocket):
+    print(f"Starting pcm stream target audio file {config.TARGET_AUDIO}")
+    with wave.open(config.TARGET_AUDIO, "rb") as wf:
+        if (
+            wf.getnchannels() != config.CHANNELS
+            or wf.getsampwidth() != config.SAMPLE_WIDTH
+        ):  # should match mono and two bytes (16 bit)
+            print(
+                f"WAV should be {config.CHANNELS} channel, {config.SAMPLE_WIDTH * 8}-bit to simulate smart glasses"
+            )
+            return
+
+        chunk_duration = config.CHUNK_SIZE / config.SAMPLE_RATE
+        bytes_per_frame = config.CHANNELS * config.SAMPLE_WIDTH
+        expected_bytes = config.CHUNK_SIZE * bytes_per_frame
+
+        print(f"Audio streaming at {config.SAMPLE_RATE}Hz")
+
+        try:
+            while True:
+                start_time = time.time()
+                data = wf.readframes(config.CHUNK_SIZE)
+
+                if len(data) < expected_bytes:  # end of file; rewind
+                    wf.rewind()
+                    data = wf.readframes(config.CHUNK_SIZE)
+
+                try:
+                    await websocket.send(config.HEADER_AUDIO + data)
+                except websockets.exceptions.ConnectionClosed:
+                    print("audio stream connection closed by server")
+                    break
+
+                process_time = time.time() - start_time
+                sleep_time = max(0, chunk_duration - process_time)
+                await asyncio.sleep(sleep_time)
+
+        except asyncio.CancelledError:
+            print("Audio stream task cancelled")
+            raise
+        except Exception as e:
+            print(f"Error in audio stream: {e}")
+
+    print("Audio file closed")
+
+
+async def stream_glasses_data():
+    print("Simulating Smart Glasses Server")
+    # repeatedly send over same deafult image
+
+    if not os.path.exists(config.TARGET_IMAGE):
+        print(f"File not found: {config.TARGET_IMAGE}")
+        return
+
+    if not os.path.exists(config.TARGET_AUDIO):
+        print(f"File not found: {config.TARGET_AUDIO}")
+        return
+
+    print("Connecting to server")
+
+    try:
+        async with websockets.connect(config.SERVER_URL) as websocket:
+            print("Streaming now")
+
+            # create separate tasks
+            vision_task = asyncio.create_task(vision_stream(websocket))
+            audio_task = asyncio.create_task(audio_stream(websocket))
+
+            _, pending = await asyncio.wait(
+                [vision_task, audio_task], return_when=asyncio.FIRST_COMPLETED
+            )
+
+            # kill remaining process
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+    except websockets.exceptions.ConnectionRefusedError:
+        print("Connection failed & could not connect to target server url")
+    except Exception as e:
+        print(f"Global error: {e}")
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(stream_glasses_data())
+    except KeyboardInterrupt:
+        print("\n Stream stopped by user")
