@@ -1,7 +1,8 @@
 
 #define endpoints
 
-from fastapi import APIRouter, WebSocket, Request
+from fastapi import APIRouter, WebSocket
+from core import config
 
 router = APIRouter()
 
@@ -9,25 +10,29 @@ router = APIRouter()
 #maybe we can make it so REST request to start connection & then websocket until REST close connection request
 #for now just do as if it's always websocketed
 
-def is_vision_data(data: bytes):
-     #logic for differentiating vision vs audio data        
-     #first byte is padded and for vision data == 1
-     return data[0] == 1
 
 @router.websocket("/stream")
 async def stream_ingest(websocket: WebSocket):
     await websocket.accept()
+    print("Client connected to stream endpoint")
 
     system = websocket.app.state.system
 
     try:
         while True:
             data = await websocket.receive_bytes()
-            if data:
-                if is_vision_data(data):
-                    system.video_queue.put(data)
-                else:
-                    system.audio_queue.put(data)
+            if not data: 
+                continue
+
+            #get data type & put into respective queues
+            header = data[0:1]
+            payload = data[1:]
+            if header == config.HEADER_VISION:
+                system.vision_queue.put(payload)
+            elif header == config.HEADER_AUDIO:
+                system.audio_queue.put(payload)
+            else:
+                print("Unkonwn header type")
 
     except Exception:
          pass

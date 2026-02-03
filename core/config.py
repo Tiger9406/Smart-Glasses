@@ -1,0 +1,18 @@
+HOST = "0.0.0.0"
+PORT = 8000
+SERVER_URL = f"ws://localhost:{PORT}/stream"
+
+HEADER_VISION = b"\x01"
+HEADER_AUDIO = b"\x02"
+
+RESOLUTION = (800, 600)
+FPS = 20
+FRAME_DELAY = 1.0 / FPS
+
+SAMPLE_RATE = 16000
+CHANNELS = 1
+SAMPLE_WIDTH = 2
+CHUNK_SIZE = 1024
+
+TARGET_IMAGE = "./api/800x600.jpeg"
+TARGET_AUDIO = "./api/OSR_us_11.wav"

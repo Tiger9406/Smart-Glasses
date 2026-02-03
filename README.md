@@ -17,6 +17,13 @@ Later coordinator combine both to make more complex actions
 Using Python 3.11; other requirements minimal as of rn; reference requirements.txt
 I'm gonna use venv instead of conda; feel free to use either though
 
+To run: 
+python main.py
 
+To run simulator with data, after running main run:
 
+python -m api.simulator
 
+Data types & stream parameters defined in core/config.py
+
+TODO: implement worker logic & coordinator logics
