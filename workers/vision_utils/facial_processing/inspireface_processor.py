@@ -1,6 +1,7 @@
 import inspireface as isf
+from inspireface import FaceInformation
 
-# import numpy as np
+import numpy as np
 
 
 class InspireFaceProcessor:
@@ -9,6 +10,7 @@ class InspireFaceProcessor:
     ):
         self.model_path = model_path
         self.session = None
+        self.known_faces = {} # list for now; we can remove this and make it a db later if known faces is to grow larger
 
         self._initialize_model(confidence_threshold, download_model)
 
@@ -29,18 +31,22 @@ class InspireFaceProcessor:
         self.session.set_detection_confidence_threshold(confidence_threshold)
         print("[Vision] InspireFace Model initialized")
 
-    # def process_frame(self, image: np.ndarray):
-    #     #given image, run detection & return features
-    #     results = []
-    #     faces = self.session.face_detection(image)
+    def detect_faces(self, image: np.ndarray):
+        return self.session.face_detection(image)
+    
+    def extract_embedding(self, image: np.ndarray, face_obj: FaceInformation):
+        return self.session.face_feature_extract(image, face_obj)
+    
+    def identify_embedding(self, embedding: np.ndarray, threshold = 0.3):
+        # given embedding, compare to known faces and return best match name and according score
+        best_score = 0.0
+        best_match = "Unkown"
 
-    #     if not faces:
-    #         return results
+        if self.known_faces:
+            for name, known_feature in self.known_faces.items():
+                score = isf.feature_comparison(embedding, known_feature)
+                if score > threshold and score > best_score:
+                    best_score = score
+                    best_match = name
 
-    #     # okay so we know there are faces; what do we do with the faces
-    #     # not a huge overhead so ig we just run
-
-    #     for i, face, in enumerate(faces):
-    #         x1, y1, x2, y2 = map(int, face.location)
-
-    #         # we only have to run facial rec if previously undetected
+        return best_match, best_score
