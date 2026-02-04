@@ -26,5 +26,13 @@ class Coordinator(mp.Process):
     def _handle_event(self, event):
         # handling events; gotta coordinate event data format
         # for instance if event type is a face in view, we throw it on the picture or sum
-            if event.get("type") == "speech":
-                print(f"{event['text']}")
+        if event.get("type") == "speech":
+            print(f"[Coordinator] {event['text']}") 
+
+        #Current event structure
+        #                 
+        #     "type": "speech",
+        #     "text": text,    (would be the audio transcription)
+        #     "id": session_id,     
+        #     "timestamp": time.time(),
+        #     "final": False
