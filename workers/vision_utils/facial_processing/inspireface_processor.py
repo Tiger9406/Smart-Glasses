@@ -3,14 +3,13 @@ from inspireface import FaceInformation
 
 import numpy as np
 
-
 class InspireFaceProcessor:
     def __init__(
         self, model_path="Megatron", confidence_threshold=0.5, download_model=False
     ):
         self.model_path = model_path
         self.session = None
-        self.known_faces = {} # list for now; we can remove this and make it a db later if known faces is to grow larger
+        self.known_faces = {} # map for now; we can remove this and make it a db later if known faces is to grow larger
 
         self._initialize_model(confidence_threshold, download_model)
 
@@ -31,6 +30,9 @@ class InspireFaceProcessor:
         self.session.set_detection_confidence_threshold(confidence_threshold)
         print("[Vision] InspireFace Model initialized")
 
+    def register_identity(self, name: str, embedding: np.ndarray):
+        self.known_faces[name].append(embedding)
+
     def detect_faces(self, image: np.ndarray):
         return self.session.face_detection(image)
     
@@ -43,10 +45,11 @@ class InspireFaceProcessor:
         best_match = "Unkown"
 
         if self.known_faces:
-            for name, known_feature in self.known_faces.items():
-                score = isf.feature_comparison(embedding, known_feature)
-                if score > threshold and score > best_score:
-                    best_score = score
-                    best_match = name
+            for name, known_features in self.known_faces.items():
+                for known_feature in known_features:
+                    score = isf.feature_comparison(embedding, known_feature)
+                    if score > threshold and score > best_score:
+                        best_score = score
+                        best_match = name
 
         return best_match, best_score
