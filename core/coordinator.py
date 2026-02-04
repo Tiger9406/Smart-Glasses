@@ -26,4 +26,5 @@ class Coordinator(mp.Process):
     def _handle_event(self, event):
         # handling events; gotta coordinate event data format
         # for instance if event type is a face in view, we throw it on the picture or sum
-        return
+            if event.get("type") == "speech":
+                print(f"{event['text']}")
