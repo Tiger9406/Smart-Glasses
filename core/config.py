@@ -5,8 +5,8 @@ SERVER_URL = f"ws://localhost:{PORT}/stream"
 HEADER_VISION = b"\x01"
 HEADER_AUDIO = b"\x02"
 
-RESOLUTION = (800, 600)
-FPS = 20
+RESOLUTION = (1280, 720)
+FPS = 15
 FRAME_DELAY = 1.0 / FPS
 
 SAMPLE_RATE = 16000
@@ -16,3 +16,4 @@ CHUNK_SIZE = 1024
 
 TARGET_IMAGE = "./api/800x600.jpeg"
 TARGET_AUDIO = "./api/OSR_us_11.wav"
+TARGET_VIDEO = "api/Friends_Clip.mp4"
