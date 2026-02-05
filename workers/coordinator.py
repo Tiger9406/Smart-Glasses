@@ -47,18 +47,22 @@ class Coordinator(BaseWorker):
                 "emb": emb
             }"""
 
+            # potential code to work with input faces; nothing for now, too many frames
+            """
             faces = event.get("faces", [])
             if faces:
                 print(f"\n [Coordinator] Vision Event: detected {len(faces)} faces")
                 for face in faces:
-                    # again; face.get("track_id, bbox, name, score, or emb")
                     _name = face.get("name", "Unknown")
                     _score = face.get("score", 0.0)
                     _bbox = face.get("bbox")
                     # print(f" - ID: {face['track_id']} | Name: {name} ({score:.2f}) | Loc: {bbox}")
 
+            """
+            pass
+
         elif event_type == "speech":
-            #given:
+            # given:
             """
             "type": "speech",
             "text": text,    (would be the audio transcription)

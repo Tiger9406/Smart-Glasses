@@ -33,6 +33,7 @@ class VisionWorker(IngestionWorker):
         print("[Vision] Ready")
 
     def run(self):
+        # for now some basic logic about facial recognition; avoids re-recognizing too often
         self.setup()
 
         try:
@@ -77,6 +78,7 @@ class VisionWorker(IngestionWorker):
 
                     emb = None
 
+                    # only do cosine sim if we don't know them or it's been a while since we last checked
                     should_recognize = (
                         identity_data["name"] == "Unknown"
                         or (now - identity_data["checked_ts"]) > self.RECHECK_INTERVAL
@@ -147,15 +149,10 @@ class VisionWorker(IngestionWorker):
         # deal with registering face for instance
         return commands
 
-        # we have frame & commands; do basic stuff and depending on commands we'll do further processing
-        # basic: maybe yolo & major change measure?
-
-        # returns result; but what form?
-
     def _init_video_writer(
         self, frame, output_path="workers/vision_utils/annotated_video.mp4", fps=15.0
     ):
-        """Initializes the VideoWriter based on the first frame's dimensions."""
+        """initialize VideoWriter based on the first frame's dimensions"""
         output_dir = os.path.dirname(output_path)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
@@ -166,27 +163,15 @@ class VisionWorker(IngestionWorker):
         print(f"[Vision] VideoWriter initialized: {output_path} ({w}x{h} @ {fps}fps)")
 
     def _draw_face_label(self, frame, bbox, text):
-        # Unpack the coordinates directly
         x1, y1, x2, y2 = bbox
-
-        # 1. Draw Bounding Box
-        # (x1, y1) is top-left, (x2, y2) is bottom-right
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-        # 2. Draw Label Background
         (text_w, text_h), baseline = cv2.getTextSize(
             text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1
         )
-
-        # Ensure label doesn't go off-screen at the top
         text_y_start = max(y1 - 20, 0)
-
-        # Draw filled box for text
         cv2.rectangle(
             frame, (x1, text_y_start), (x1 + text_w, text_y_start + 20), (0, 255, 0), -1
         )
-
-        # 3. Draw Text
         text_y = max(y1 - 5, 15)
         cv2.putText(
             frame,
