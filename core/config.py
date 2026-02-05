@@ -8,17 +8,19 @@ HEADER_AUDIO = b"\x02"
 RESOLUTION = (1280, 720)
 FPS = 15
 FRAME_DELAY = 1.0 / FPS
+TARGET_VIDEO = './api/Friends_Clip.mp4'
+TARGET_IMAGE = "./api/800x600.jpeg"
+
+# model for face rec
+DEFAULT_ISF_MODEL = "Megatron"
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
 SAMPLE_WIDTH = 2
 CHUNK_SIZE = 1024
-
-TARGET_IMAGE = "./api/800x600.jpeg"
 TARGET_AUDIO = "./api/OSR_us_11_16k.wav"
 
-DEFAULT_MODEL = "Megatron"
-#model
+# model for audio
 PARAKEET_MODEL="mlx-community/parakeet-tdt-0.6b-v3"
 
 #chunking
