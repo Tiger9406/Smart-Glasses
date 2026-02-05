@@ -121,5 +121,3 @@ class AudioWorker(BaseWorker):
         finally:
             if ctx:
                 ctx.__exit__(None, None, None)
-            if ctx:
-                ctx.__exit__(None, None, None)
