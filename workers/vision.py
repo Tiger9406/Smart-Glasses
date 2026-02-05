@@ -24,7 +24,7 @@ class VisionWorker(IngestionWorker):
     def setup(self):
         print("[Vision] Worker setting up")
         self.processor = InspireFaceProcessor(
-            model_path="Megatron", confidence_threshold=0.5, download_model=False
+            model_type="Megatron", confidence_threshold=0.5, download_model=False
         )
         self.processor.session.set_track_lost_recovery_mode(True)
         self.active_identities = {}

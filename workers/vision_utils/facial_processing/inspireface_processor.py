@@ -2,20 +2,33 @@ import inspireface as isf
 from inspireface import FaceInformation
 import numpy as np
 
+from dotenv import load_dotenv
+import os
+
+
+
 class InspireFaceProcessor:
     def __init__(
-        self, model_path="Megatron", confidence_threshold=0.5, download_model=False
+        self, model_type = "Megatron", confidence_threshold=0.5, download_model=False
     ):
-        self.model_path = model_path
+        load_dotenv()
+        model_path = os.getenv("MEGATRON_MODEL_PATH", "")
         self.session = None
         self.known_faces = {} # map for now; we can remove this and make it a db later if known faces is to grow larger
 
-        self._initialize_model(confidence_threshold, download_model)
+        self._initialize_model(model_type, model_path, confidence_threshold, download_model)
 
-    def _initialize_model(self, confidence_threshold, download_model):
+    def _initialize_model(self, model_type, model_path, confidence_threshold, download_model):
         # set up inspireface session
         isf.ignore_check_latest_model(download_model)
-        ret = isf.launch(self.model_path)
+        if model_type != "Pikachu" and model_type != "Megatron":
+            print("[Vision] model type needs to be Pikachu or Megatron; defaulting to megatron")
+            ret = isf.launch("Megatron")
+        elif model_path == "": 
+            print("[Vision] model path not found; downloading; to not download again, save path to .env")
+            ret = isf.launch(model_type)
+        else:
+            ret = isf.launch(model_type, model_path)
         if not ret:
             raise RuntimeError("InspireFace launch failed; check given model/path")
 
