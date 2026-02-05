@@ -1,4 +1,5 @@
 from workers.base import IngestionWorker
+import queue
 
 
 class AudioWorker(IngestionWorker):
@@ -13,7 +14,7 @@ class AudioWorker(IngestionWorker):
                 try:
                     raw_bytes = self.input_queue.get(timeout=0.01)
                     self.process(raw_bytes)
-                except self.queue.Empty:
+                except queue.Empty:
                     continue
         finally:
             print("[Audio] Releasing resources")

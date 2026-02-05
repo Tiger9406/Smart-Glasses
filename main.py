@@ -8,10 +8,11 @@ from fastapi import FastAPI
 
 from api.routes import setup_routes
 from core import config
-from core.coordinator import Coordinator
+
 from core.shared_mem import SharedMem
 from workers.audio import AudioWorker
 from workers.vision import VisionWorker
+from workers.coordinator import Coordinator
 
 
 # defines lifespan; handles startup and shutdown events
@@ -35,16 +36,22 @@ async def lifespan(app: FastAPI):
 
     yield  # app running after this
 
-    print("Cleaning resources")
-    # terminate any running processes
+    print("[System] Shutting down workers")
+    workers = [audio_worker, vision_worker, brain]
+    for w in workers:
+        w.shutdown()
 
-    brain.stop()
-    audio_worker.shutdown()
-    vision_worker.shutdown()
+    #queues not empty when we stop it; instead we just stop it from joining & chuck away data
+    print("[System] Shutting down queues")
+    shared_mem.shutdown()
 
-    brain.join()
-    audio_worker.join()
-    vision_worker.join()
+    print("[System] Waiting for workers to join...")
+    for w in workers:
+        w.join(timeout=1.0)
+        if w.is_alive():
+            print(f"Force killing {w.name}...")
+            w.terminate()
+            w.join()
 
     print("[System] All workers stopped")
 
