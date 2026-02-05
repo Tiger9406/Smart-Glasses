@@ -21,5 +21,5 @@ class AudioWorker(IngestionWorker):
 
     def process(self, raw_bytes):
         # preprocess incoming data; dk form yet
-        print(f"audio worker received & processing audio file of size {len(raw_bytes)}")
+        print(f"[Audio] worker received & processing audio file of size {len(raw_bytes)}")
         pass

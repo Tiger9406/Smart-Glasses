@@ -106,6 +106,7 @@ class VisionWorker(IngestionWorker):
 
                 try:
                     self.output_queue.put({"type": "vision_result", "faces": result})
+                    print("[Vision] added to ouput queue")
                 except queue.Full:
                     print("Queue Full; passing")
                     pass

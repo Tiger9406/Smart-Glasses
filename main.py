@@ -1,6 +1,4 @@
 # entry point
-
-import multiprocessing as mp
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -8,11 +6,10 @@ from fastapi import FastAPI
 
 from api.routes import setup_routes
 from core import config
-
 from core.shared_mem import SharedMem
 from workers.audio import AudioWorker
-from workers.vision import VisionWorker
 from workers.coordinator import Coordinator
+from workers.vision import VisionWorker
 
 
 # defines lifespan; handles startup and shutdown events
@@ -41,7 +38,7 @@ async def lifespan(app: FastAPI):
     for w in workers:
         w.shutdown()
 
-    #queues not empty when we stop it; instead we just stop it from joining & chuck away data
+    # queues not empty when we stop it; instead we just stop it from joining & chuck away data
     print("[System] Shutting down queues")
     shared_mem.shutdown()
 
@@ -71,6 +68,6 @@ if __name__ == "__main__":
         uvicorn.run("main:app", host=config.HOST, port=config.PORT, log_level="error")
     except KeyboardInterrupt:
         print("Shutting down server...")
-        #uvicorn gone call shutdowns
+        # uvicorn gone call shutdowns
     finally:
         print("Server has been shut down.")
