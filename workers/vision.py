@@ -23,10 +23,16 @@ class VisionWorker(mp.Process):
 
         print("[Vision] Worker setting up")
         self.command_queue = vision_command_queue
-        self.tracker = FaceTracker(iou_threshold=0.3, untracked_before_delete=10)
+        self.tracker = FaceTracker(iou_threshold=0.3, untracked_before_delete=20)
         self.processor = InspireFaceProcessor(
             model_path="Megatron", confidence_threshold=0.5, download_model=False
         )
+        self.RECOGNITION_INTERVAL = 30  # re-check identity every 30 frames
+        self.CONFIDENCE_THRESHOLD = 0.60  # Score to confirm is someone
+        self.UNLOCK_THRESHOLD = (
+            0.40  # average score thereafter to maintain identity
+        )
+
         print("[Vision] Ready")
 
     def run(self):
@@ -56,9 +62,6 @@ class VisionWorker(mp.Process):
         return commands
 
     def process(self, raw_bytes):
-        # given raw bytes, we could do several things
-        # better if coordinator has a command for us; shared queue of commands?
-        # assume command queue top is current task(s)? or do we do top k concurrently
         if not raw_bytes:
             return
 
@@ -76,21 +79,34 @@ class VisionWorker(mp.Process):
 
         for i, track in enumerate(current_tracks):
             raw_face_obj = raw_detection_faces[i]
-            should_identify = False
-            if track.identity == "Unkown":
-                should_identify = True
 
-            elif track.frames_since_recognition > 15:
-                should_identify = True
-
-            elif not track.is_confirmed:
-                should_identify = True
+            # if unknown, too long since we last recognized, 
+            # or unconfirmed, we should do identification
+            should_identify = (
+                track.identity == "Unkown"
+                or track.frames_since_recognition > self.RECOGNITION_INTERVAL
+                or not track.is_confirmed
+            )
 
             if should_identify:
                 embedding = self.processor.extract_embedding(frame, raw_face_obj)
-                name, score = self.processor.identify_embedding(embedding)
 
-                # TODO: deal with given score and names
+                if track.is_confirmed:
+                    # we only care about score against the locked identity
+                    score = self.processor.compare_to_person(track.identity)
+                    track.update_identity_score(score)
+
+                    if score < 0.01 or track.average_score < self.UNLOCK_THRESHOLD:
+                        print(f"[Vision] Lost lock on {track.identity} (avg: {track.average_score:..2f})")
+                        track.update_identity() #empty to reset
+                
+                #unknown / still looking for match
+                else:
+                    name, score = self.processor.identify_embedding(embedding)
+                    if score > self.CONFIDENCE_THRESHOLD:
+                        track.update_identity(name, True, score)
+                    else: # still unknown
+                        pass
 
         commands = self._get_active_commands()
 

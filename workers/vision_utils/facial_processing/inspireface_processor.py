@@ -39,17 +39,25 @@ class InspireFaceProcessor:
     def extract_embedding(self, image: np.ndarray, face_obj: FaceInformation):
         return self.session.face_feature_extract(image, face_obj)
     
+    def compare_to_person(self, name: str, embedding: np.ndarray):
+        if self.known_faces.get(name) is None:
+            return 0.0
+        best_comp = 0.0
+        for known_features in self.known_faces[name]:
+            score = isf.feature_comparison(embedding, known_features)
+            best_comp = max(best_comp, score)
+        return best_comp
+    
     def identify_embedding(self, embedding: np.ndarray, threshold = 0.3):
         # given embedding, compare to known faces and return best match name and according score
         best_score = 0.0
         best_match = "Unkown"
 
         if self.known_faces:
-            for name, known_features in self.known_faces.items():
-                for known_feature in known_features:
-                    score = isf.feature_comparison(embedding, known_feature)
-                    if score > threshold and score > best_score:
-                        best_score = score
-                        best_match = name
+            for name, _ in self.known_faces.items():
+                score = self.compare_to_person(name, embedding)
+                if score > threshold and score > best_score:
+                    best_score = score
+                    best_match = name
 
         return best_match, best_score

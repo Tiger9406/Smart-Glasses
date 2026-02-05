@@ -1,8 +1,10 @@
-from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import List, Tuple
+from collections import deque
 
-import numpy as np
+# import numpy as np
 
+HISTORY_SIZE = 20
 
 @dataclass
 class TrackedFace:
@@ -11,22 +13,40 @@ class TrackedFace:
     bbox: Tuple[int, int, int, int]
 
     identity: str = "Unknown"
-    identity_score: float = 0.0
-    latest_embedding: Optional[np.ndarray] = None
+    is_confirmed: bool = False
+
+    # latest_embedding: Optional[np.ndarray] = None
+
+    #stores confidence score of current identity for the last N frames
+    score_history: deque = field(default_factory = lambda: deque(maxlen=HISTORY_SIZE)) 
+    score_sum: float = 0.0
 
     frames_since_recognition: int = 0
     frames_unseen: int = 0
-    is_confirmed: bool = False
+    
+    @property
+    def average_score(self)->float:
+        if not self.score_history:
+            return 0.0
+        return self.score_sum/len(self.score_history)
 
     def update_pos(self, new_bbox):
         self.bbox = new_bbox
         self.frames_unseen = 0
         self.frames_since_recognition += 1
 
-    def update_identity(self, new_identity, new_identity_score):
-        if new_identity_score > self.identity_score:
-            self.identity = new_identity
-            self.identity_score = new_identity_score
+    def update_identity_score(self, identity_score):
+        self.score_history.append(identity_score)
+        if len(self.score_history)==HISTORY_SIZE:
+            self.score_sum-=self.score_history.popleft()
+        self.score_sum+=identity_score
+    
+    def update_identity(self, new_identity = "Unknown", is_confirmed = False, identity_score = 0.0):
+        self.identity = new_identity
+        self.is_confirmed=is_confirmed
+        self.score_history.clear()
+        self.score_history.append(identity_score)
+
 
 
 def calculate_iou(boxA, boxB):
