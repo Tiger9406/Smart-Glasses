@@ -3,6 +3,7 @@
 
 import multiprocessing as mp
 import time
+import queue
 
 
 class Coordinator(mp.Process):
@@ -10,6 +11,8 @@ class Coordinator(mp.Process):
         super().__init__(daemon=True)
         self.results_queue = results_queue
         self.past_events = {}
+        self.running = mp.Event()
+        self.running.set()
         # self.audio_events
         # self.vision_events
 
@@ -17,13 +20,37 @@ class Coordinator(mp.Process):
         # again, decision making module given the initial processing by the workers
 
     def run(self):
-        while True:
-            if not self.results_queue.empty():
-                event = self.results_queue.get()
-                self._handle_event(event)
-            time.sleep(0.001)
+        print("[Coordinator] Started")
+        while self.running.is_set():
+            try:
+                event = self.results_queue.get(timeout=0.1)
+                self._handle_event
+            except queue.Empty:
+                continue
+            except KeyboardInterrupt:
+                break
+        print("[Coordinator] Shutting down")
 
     def _handle_event(self, event):
         # handling events; gotta coordinate event data format
         # for instance if event type is a face in view, we throw it on the picture or sum
+
+        event_type = event.get("type", "unknown")
+
+        if event_type == "vision_result":
+            faces = event.get("face", [])
+            if faces:
+                print(f"\n [Coordinator] Vision Event: detected {len(faces)} faces")
+                for face in faces:
+                    name = face.get("name", "Unknown")
+                    score = face.get("score", 0.0)
+                    bbox = face.get("bbox")
+                    print(f" - ID: {face['track_id']} | Name: {name} ({score:.2f}) | Loc: {bbox}")
+
+        else:
+            print("\n[COordinator] got other event")
+
         return
+    
+    def stop(self):
+        self.running.clear()
