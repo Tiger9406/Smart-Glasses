@@ -4,3 +4,5 @@ docker_legacy/
 .venv/
 __pycache__/
 .DS_Store
+
+*.mov
