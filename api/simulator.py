@@ -3,6 +3,7 @@ import os
 import time
 import wave
 
+import cv2
 import websockets
 
 from core import config
@@ -10,6 +11,55 @@ from core import config
 
 # defining vision
 async def vision_stream(websocket):
+    print(f"Opening video file: {config.TARGET_VIDEO}")
+    cap = cv2.VideoCapture(config.TARGET_VIDEO)
+
+    if not cap.isOpened():
+        print(f"Error opening video file: {config.TARGET_VIDEO}")
+        return
+
+    # frame delay & such based on video itself instead of glob param; otherwise have to
+    # process video further each time
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_delay = 1.0 / fps if fps > 0 else config.FRAME_DELAY
+    print(f"Video streaming at {fps if fps > 0 else 'default'} FPS")
+
+    try:
+        while True:
+            start_time = time.time()
+            ret, frame = cap.read()
+
+            if not ret:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                continue
+
+            success, buffer = cv2.imencode(".jpg", frame)
+            if not success:
+                print("Failed to encode frame")
+                continue
+
+            image_bytes = buffer.tobytes()
+
+            try:
+                await websocket.send(config.HEADER_VISION + image_bytes)
+            except websockets.exceptions.ConnectionClosed:
+                print("Vision stream connection closed by server")
+                break
+
+            process_time = time.time() - start_time
+            sleep_time = max(0, frame_delay - process_time)
+            await asyncio.sleep(sleep_time)
+    except asyncio.CancelledError:
+        print("Vision stream task cancelled")
+        raise
+    except Exception as e:
+        print(f"Error in vision stream: {e}")
+    finally:
+        cap.release()
+
+
+async def _image_stream(websocket):
     try:
         with open(config.TARGET_IMAGE, "rb") as f:
             image_bytes = f.read()
