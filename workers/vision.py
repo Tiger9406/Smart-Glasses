@@ -1,23 +1,45 @@
 import multiprocessing as mp
+import time
 
 import cv2
 import numpy as np
 
-from workers.base import BaseWorker
+from workers.vision_utils.facial_processing.inspireface_processor import (
+    InspireFaceProcessor,
+)
 from workers.vision_utils.facial_processing.tracking import FaceTracker
-from workers.vision_utils.facial_processing.inspireface_processor import InspireFaceProcessor
 
 
-class VisionWorker(BaseWorker):
-    def setup(self, vision_command_queue: mp.Queue):
-        # load whatever initial vision model u need; keep in mind single core so not gonna be performant
+class VisionWorker(mp.Process):
+    def __init__(
+        self,
+        input_queue: mp.Queue,
+        output_queue: mp.Queue,
+        vision_command_queue: mp.Queue,
+    ):
+        super().__init__(daemon=True)
+        self.input_queue = input_queue
+        self.output_queue = output_queue
+
         print("[Vision] Worker setting up")
         self.command_queue = vision_command_queue
-        self.objects_tracking = []
         self.tracker = FaceTracker(iou_threshold=0.3, untracked_before_delete=10)
-        self.processor = InspireFaceProcessor(model_path = "Megatron", confidence_threshold = 0.5, download_model = False)
-
+        self.processor = InspireFaceProcessor(
+            model_path="Megatron", confidence_threshold=0.5, download_model=False
+        )
         print("[Vision] Ready")
+
+    def run(self):
+        while True:
+            if not self.input_queue.empty():
+                item = self.input_queue.get()
+                result = self.process(item)
+
+                if result:
+                    self.output_queue.put(result)
+
+            # have a time out to prevent overworking cpu upon task spike
+            time.sleep(0.001)
 
     def _decode_image(self, raw_bytes):
         # turn byte sinto numpy array
@@ -46,8 +68,8 @@ class VisionWorker(BaseWorker):
 
         raw_detection_faces = self.processor.detect_faces(frame)
         if not raw_detection_faces:
-            return 
-        
+            return
+
         # use newly detected faces to update current holding
         bboxes = [tuple(map(int, face.location)) for face in raw_detection_faces]
         current_tracks = self.tracker.update(bboxes)
@@ -68,10 +90,8 @@ class VisionWorker(BaseWorker):
                 embedding = self.processor.extract_embedding(frame, raw_face_obj)
                 name, score = self.processor.identify_embedding(embedding)
 
-                #TODO: deal with given score and names
-        
-        
-        
+                # TODO: deal with given score and names
+
         commands = self._get_active_commands()
 
         # we have frame & commands; do basic stuff and depending on commands we'll do further processing
