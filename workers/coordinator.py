@@ -4,15 +4,13 @@
 import multiprocessing as mp
 import time
 import queue
+from workers.base import BaseWorker
 
 
-class Coordinator(mp.Process):
-    def __init__(self, results_queue):
-        super().__init__(daemon=True)
+class Coordinator(BaseWorker):
+    def __init__(self, results_queue: mp.Queue):
+        super().__init__()
         self.results_queue = results_queue
-        self.past_events = {}
-        self.running = mp.Event()
-        self.running.set()
         # self.audio_events
         # self.vision_events
 
@@ -21,15 +19,17 @@ class Coordinator(mp.Process):
 
     def run(self):
         print("[Coordinator] Started")
-        while self.running.is_set():
-            try:
-                event = self.results_queue.get(timeout=0.1)
-                self._handle_event
-            except queue.Empty:
-                continue
-            except KeyboardInterrupt:
-                break
-        print("[Coordinator] Shutting down")
+        try:
+            while self.running.is_set():
+                try:
+                    event = self.results_queue.get(timeout=0.1)
+                    self._handle_event(event)
+                except queue.Empty:
+                    continue
+                except KeyboardInterrupt:
+                    break
+        finally:
+            print("[Coordinator] Shutting down")
 
     def _handle_event(self, event):
         # handling events; gotta coordinate event data format
@@ -48,9 +48,6 @@ class Coordinator(mp.Process):
                     print(f" - ID: {face['track_id']} | Name: {name} ({score:.2f}) | Loc: {bbox}")
 
         else:
-            print("\n[COordinator] got other event")
+            print("\n[Coordinator] got other event")
 
         return
-    
-    def stop(self):
-        self.running.clear()
