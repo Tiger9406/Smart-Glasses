@@ -16,6 +16,11 @@ Later coordinator combine both to make more complex actions
 
 Using Python 3.11; other requirements minimal as of rn; reference requirements.txt
 I'm gonna use venv instead of conda; feel free to use either though
+Pip install requirements.txt
+First time running may download parakeet & inspireface models
+
+We have full speech-to-text pipeline along with facial recognition pipeline
+Awaiting further combinations of the two to create more complex logic for identification & postprocessing
 
 To run: 
 python main.py
@@ -28,4 +33,3 @@ Data types & stream parameters defined in core/config.py
 
 TODO: implement worker logic & coordinator logics
 
-If main doesn shut down properly run kill -9 $(lsof -t -i :8000)
