@@ -38,9 +38,15 @@ async def lifespan(app: FastAPI):
     print("Cleaning resources")
     # terminate any running processes
 
-    brain.terminate()
-    audio_worker.terminate()
-    vision_worker.terminate()
+    brain.stop()
+    audio_worker.shutdown()
+    vision_worker.shutdown()
+
+    brain.join()
+    audio_worker.join()
+    vision_worker.join()
+
+    print("[System] All workers stopped")
 
 
 def start_server():
@@ -58,6 +64,6 @@ if __name__ == "__main__":
         uvicorn.run("main:app", host=config.HOST, port=config.PORT, log_level="error")
     except KeyboardInterrupt:
         print("Shutting down server...")
-        mp.current_process().terminate()
+        #uvicorn gone call shutdowns
     finally:
         print("Server has been shut down.")
