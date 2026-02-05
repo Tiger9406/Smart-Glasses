@@ -5,10 +5,10 @@ import time
 import cv2
 import numpy as np
 
+from workers.base import IngestionWorker
 from workers.vision_utils.facial_processing.inspireface_processor import (
     InspireFaceProcessor,
 )
-from workers.base import IngestionWorker
 
 
 class VisionWorker(IngestionWorker):
@@ -27,6 +27,7 @@ class VisionWorker(IngestionWorker):
         self.processor.session.set_track_lost_recovery_mode(True)
         self.active_identities = {}
         self.RECHECK_INTERVAL = 2.0  # seconds between re-verifying identification
+        self.CONFIDENCE_THRESHOLD = 0.5
         print("[Vision] Ready")
 
     def run(self):
@@ -55,7 +56,7 @@ class VisionWorker(IngestionWorker):
 
                     if (
                         track_id not in self.active_identities
-                    ):  # check if we know this dude
+                    ):  # new box; not previously tracked
                         self.active_identities[track_id] = {
                             "name": "Unknown",
                             "score": 0.0,
@@ -65,25 +66,27 @@ class VisionWorker(IngestionWorker):
                     # get our stored data on this guy
                     identity_data = self.active_identities[track_id]
 
+                    # determine if we should try to identify him (compare to known people)
                     now = time.time()
                     should_recognize = (
                         identity_data["name"] == "Unknown"
                         or (now - identity_data["checked_ts"]) > self.RECHECK_INTERVAL
                     )
-
                     if should_recognize:
                         emb = self.processor.extract_embedding(frame, face)
                         name, score = self.processor.identify_embedding(emb)
 
-                        if score > 0.6:
+                        # if strongly looks like someone we know
+                        if score > self.CONFIDENCE_THRESHOLD:
                             self.active_identities[track_id] = {
                                 "name": name,
                                 "score": score,
                                 "checked_ts": now,
                             }
-                        else:
+                        else:  # still don't know
                             self.active_identities[track_id]["checked_ts"] = now
 
+                    # form result to send back to coordinator
                     x, y, w, h = map(int, face.location)
                     result.append(
                         {
@@ -91,9 +94,11 @@ class VisionWorker(IngestionWorker):
                             "bbox": (x, y, w, h),
                             "name": self.active_identities[track_id]["name"],
                             "score": self.active_identities[track_id]["score"],
+                            "emb": emb,
                         }
                     )
 
+                # remove expired ids (untracked for a while)
                 expired_ids = [
                     track_id
                     for track_id in self.active_identities
@@ -113,7 +118,6 @@ class VisionWorker(IngestionWorker):
             print("[Vision] Releasing resources")
             if hasattr(self, "processor") and self.processor.session:
                 self.processor.session.release()
-
 
     def _get_active_commands(self) -> list:
         commands = []
