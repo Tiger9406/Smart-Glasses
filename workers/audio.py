@@ -5,6 +5,7 @@ import uuid
 
 import mlx.core as mx
 import numpy as np
+import onnxruntime as ort
 from parakeet_mlx import from_pretrained
 
 from core import config
@@ -13,6 +14,7 @@ from core import config
 class AudioWorker(IngestionWorker):
     def setup(self):
         # so it doesn't read the config every single loop
+        self.session = ort.InferenceSession("workers/audio_utils/redimnet_b2.onnx")
 
         print(f"[AudioWorker] Loading model: {config.PARAKEET_MODEL}")
         self.model = from_pretrained(config.PARAKEET_MODEL)
@@ -37,11 +39,20 @@ class AudioWorker(IngestionWorker):
             loudness > self.loudness_threshold
         )  # if the mean is very low, the user likely isnt talking
 
+    def get_embedding(self, audio):
+        return self.session.run(None, {"audio": audio})[0][0]
+
+    def cosine_sim(a, b):
+        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
     def run(self):
         self.setup()
 
         audio_buffer = b""
         context_size = (self.context_left, self.context_right)
+
+        audio_chunk_holder = []  # this is for storing all chunks to voice recognize at end of sentence
+        last_speaker = "Unkown"
 
         # session state
         session_id = None
@@ -76,6 +87,8 @@ class AudioWorker(IngestionWorker):
                     is_speech = self.speech_checker(samples)  # check if speech
 
                     if is_speech:
+                        audio_chunk_holder.append(samples)
+
                         silence_count = 0  # reset silence counter cus speech
 
                         # start new session if needed could start with no speech
@@ -100,6 +113,13 @@ class AudioWorker(IngestionWorker):
 
                             if silence_count >= self.silent_chunks:
                                 # sentence break
+
+                                sentence_audio = np.concatenate(audio_chunk_holder)
+                                audio_reshaped = sentence_audio.reshape(
+                                    1, -1
+                                )  # to make it 2d arr
+                                embedding = self.get_embedding(audio_reshaped)
+
                                 if last_text:
                                     self.output_queue.put(
                                         {
@@ -108,6 +128,7 @@ class AudioWorker(IngestionWorker):
                                             "id": session_id,
                                             "timestamp": time.time(),
                                             "final": True,
+                                            "embedding": embedding,
                                             # name and embedding added here soon
                                         }
                                     )
