@@ -3,6 +3,7 @@
 
 import multiprocessing as mp
 import queue
+
 from workers.base import BaseWorker
 
 
@@ -37,14 +38,23 @@ class Coordinator(BaseWorker):
         event_type = event.get("type", "unknown")
 
         if event_type == "vision_result":
+            # given: list of the following:
+            # {
+            #     "track_id": track_id,
+            #     "bbox": (x, y, w, h),
+            #     "name": self.active_identities[track_id]["name"],
+            #     "score": self.active_identities[track_id]["score"],
+            #     "emb": emb
+            # }
             faces = event.get("faces", [])
             if faces:
                 print(f"\n [Coordinator] Vision Event: detected {len(faces)} faces")
                 for face in faces:
-                    name = face.get("name", "Unknown")
-                    score = face.get("score", 0.0)
-                    bbox = face.get("bbox")
-                    print(f" - ID: {face['track_id']} | Name: {name} ({score:.2f}) | Loc: {bbox}")
+                    # again; face.get("track_id, bbox, name, score, or emb")
+                    _name = face.get("name", "Unknown")
+                    _score = face.get("score", 0.0)
+                    _bbox = face.get("bbox")
+                    # print(f" - ID: {face['track_id']} | Name: {name} ({score:.2f}) | Loc: {bbox}")
 
         else:
             print("\n[Coordinator] got other event")
