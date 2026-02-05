@@ -1,6 +1,5 @@
 import inspireface as isf
 from inspireface import FaceInformation
-
 import numpy as np
 
 class InspireFaceProcessor:
@@ -31,6 +30,8 @@ class InspireFaceProcessor:
         print("[Vision] InspireFace Model initialized")
 
     def register_identity(self, name: str, embedding: np.ndarray):
+        if name not in self.known_faces:
+            self.known_faces[name] = []
         self.known_faces[name].append(embedding)
 
     def detect_faces(self, image: np.ndarray):
@@ -40,8 +41,9 @@ class InspireFaceProcessor:
         return self.session.face_feature_extract(image, face_obj)
     
     def compare_to_person(self, name: str, embedding: np.ndarray):
-        if self.known_faces.get(name) is None:
+        if name not in self.known_faces:
             return 0.0
+        
         best_comp = 0.0
         for known_features in self.known_faces[name]:
             score = isf.feature_comparison(embedding, known_features)
@@ -51,7 +53,7 @@ class InspireFaceProcessor:
     def identify_embedding(self, embedding: np.ndarray, threshold = 0.3):
         # given embedding, compare to known faces and return best match name and according score
         best_score = 0.0
-        best_match = "Unkown"
+        best_match = "Unknown"
 
         if self.known_faces:
             for name, _ in self.known_faces.items():
