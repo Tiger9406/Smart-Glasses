@@ -41,7 +41,7 @@ class Coordinator(BaseWorker):
             # given list of the following:
             """{
                 "track_id": track_id,
-                "bbox": (x, y, w, h),
+                "bbox": (x1, y1, x2, y2),
                 "name": self.active_identities[track_id]["name"],
                 "score": self.active_identities[track_id]["score"],
                 "emb": emb
