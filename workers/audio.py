@@ -5,6 +5,7 @@ import mlx.core as mx
 import time
 import uuid
 from core import config
+import queue
 
 
 class AudioWorker(BaseWorker):
@@ -54,8 +55,12 @@ class AudioWorker(BaseWorker):
                 try:
                     raw_bytes = self.input_queue.get(timeout=1.0) # so it doesnt block forevers
 
-                except:
+                except queue.Empty:
                     continue
+                except Exception as E:
+                    print("[Error] ", E)
+                    raise RuntimeError
+                
                 audio_buffer += raw_bytes
                 
                 while len(audio_buffer) >= self.chunk_bytes:
@@ -79,13 +84,6 @@ class AudioWorker(BaseWorker):
                         text = transcriber.result.text.strip()
 
                         if text and text != last_text:
-                            # self.output_queue.put({   #If we want to send it chunk by chunk not when it decides sentences break
-                            #     "type": "speech",
-                            #     "text": text,
-                            #     "id": session_id,
-                            #     "timestamp": time.time(),
-                            #     "final": False
-                            # })
                             last_text = text
                     
                     else:

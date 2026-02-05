@@ -29,10 +29,15 @@ class Coordinator(mp.Process):
         if event.get("type") == "speech":
             print(f"[Coordinator] {event['text']}") 
 
-        #Current event structure
+        # Current event structure
         #                 
         #     "type": "speech",
         #     "text": text,    (would be the audio transcription)
         #     "id": session_id,     
         #     "timestamp": time.time(),
-        #     "final": False
+        #     "final": False,
+        #     "name": Unkown,
+        #     "embedding": 
+        
+        # Check in coordinator for vision and audio if one knows the current person in frame and speaking and the other doesn't
+        # Example Vision recognizes tiger, but audio sends name: unkown. Update the voice recogniztion DB with voice_embedding associated with name that vision gives over
