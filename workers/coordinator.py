@@ -37,7 +37,7 @@ class Coordinator(BaseWorker):
         event_type = event.get("type", "unknown")
 
         if event_type == "vision_result":
-            faces = event.get("face", [])
+            faces = event.get("faces", [])
             if faces:
                 print(f"\n [Coordinator] Vision Event: detected {len(faces)} faces")
                 for face in faces:
