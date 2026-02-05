@@ -7,3 +7,4 @@ __pycache__/
 
 *.mov
 /api/video_converter.py
+/vision_utils/annotated_video.mp4
