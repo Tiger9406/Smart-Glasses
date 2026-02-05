@@ -1,4 +1,6 @@
 import multiprocessing as mp
+import queue
+import math
 import time
 
 import cv2
@@ -7,8 +9,6 @@ import numpy as np
 from workers.vision_utils.facial_processing.inspireface_processor import (
     InspireFaceProcessor,
 )
-from workers.vision_utils.facial_processing.tracking import FaceTracker
-
 
 class VisionWorker(mp.Process):
     def __init__(
@@ -20,95 +20,101 @@ class VisionWorker(mp.Process):
         super().__init__(daemon=True)
         self.input_queue = input_queue
         self.output_queue = output_queue
-
-        print("[Vision] Worker setting up")
         self.command_queue = vision_command_queue
-        self.tracker = FaceTracker(iou_threshold=0.3, untracked_before_delete=20)
+    
+    def setup(self):
+        print("[Vision] Worker setting up")
         self.processor = InspireFaceProcessor(
             model_path="Megatron", confidence_threshold=0.5, download_model=False
         )
-        self.RECOGNITION_INTERVAL = 30  # re-check identity every 30 frames
-        self.CONFIDENCE_THRESHOLD = 0.60  # Score to confirm is someone
-        self.UNLOCK_THRESHOLD = (
-            0.40  # average score thereafter to maintain identity
-        )
-
+        self.processor.session.set_track_lost_recovery_mode(True)
+        self.active_identities = {}
+        self.RECHECK_INTERVAL = 2.0 # seconds between re-verifying identification
+        self.running = mp.Event()
+        self.running.set()
         print("[Vision] Ready")
 
+    def _get_center(self, bbox):
+        x, y, w, h = bbox
+        return (int(x + w / 2), int(y + h / 2))
+    
+    def _dist(self, p1, p2):
+        return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
+
     def run(self):
-        while True:
-            if not self.input_queue.empty():
-                item = self.input_queue.get()
-                result = self.process(item)
+        self.setup()
 
-                if result:
-                    self.output_queue.put(result)
+        try:
+            while self.running.is_set():
+                try: 
+                    raw_bytes = self.input_queue.get(timeout=0.01)
+                except queue.Empty:
+                    continue
+                frame = cv2.imdecode(np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR)
+                if frame is None:
+                    continue
+                
+                raw_detection_faces = self.processor.detect_faces(frame)
 
-            # have a time out to prevent overworking cpu upon task spike
-            time.sleep(0.001)
+                result = []
+                current_frame_ids = set()
 
-    def _decode_image(self, raw_bytes):
-        # turn byte sinto numpy array
-        np_arr = np.frombuffer(raw_bytes, np.uint8)
-        return cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+                for face in raw_detection_faces: 
+                    track_id = face.track_id
+                    current_frame_ids.add(track_id)
+
+                    if track_id not in self.active_identities: # check if we know this dude
+                        self.active_identities[track_id] = {'name': "Unknown", 'score': 0.0, 'checked_ts': 0}
+
+                    # get our stored data on this guy
+                    identity_data = self.active_identities[track_id]
+
+                    now = time.time()
+                    should_recognize = (
+                        identity_data['name'] == "Unknown" or 
+                        (now - identity_data['checked_ts']) > self.RECHECK_INTERVAL
+                    )
+
+                    if should_recognize:
+                        emb = self.processor.extract_embedding(frame, face)
+                        name, score = self.processor.identify_embedding(emb)
+
+                        if score > 0.6:
+                            self.active_identities[track_id]={
+                                'name': name, 
+                                'score': score, 
+                                'checked_ts': now
+                            }
+                        else:
+                            self.active_identities[track_id]['checked_ts']=now
+
+                    x, y, w, h = map(int, face.location)
+                    result.append({
+                        'track_id': track_id,
+                        'bbox': (x, y, w, h),
+                        'name': self.active_identities[track_id]['name'],
+                        'score': self.active_identities[track_id]['score']
+                    })
+
+                expired_ids = [track_id for track_id in self.active_identities if track_id not in current_frame_ids]
+                for track_id in expired_ids:
+                    del self.active_identities[track_id]
+                
+                self.output_queue.put({"type": "vision_result", "faces": result})
+
+                
+        finally:
+            #TODO: clean resources here
+            pass
+
+    def shutdown(self):
+        self.running.clear()
 
     def _get_active_commands(self) -> list:
-        if self.command_queue.empty():
-            return []
-
         commands = []
         while not self.command_queue.empty():
             commands.append(self.command_queue.get_nowait())
         return commands
-
-    def process(self, raw_bytes):
-        if not raw_bytes:
-            return
-
-        frame = self._decode_image(self, raw_bytes)
-        if frame is None:
-            return
-
-        raw_detection_faces = self.processor.detect_faces(frame)
-        if not raw_detection_faces:
-            return
-
-        # use newly detected faces to update current holding
-        bboxes = [tuple(map(int, face.location)) for face in raw_detection_faces]
-        current_tracks = self.tracker.update(bboxes)
-
-        for i, track in enumerate(current_tracks):
-            raw_face_obj = raw_detection_faces[i]
-
-            # if unknown, too long since we last recognized, 
-            # or unconfirmed, we should do identification
-            should_identify = (
-                track.identity == "Unkown"
-                or track.frames_since_recognition > self.RECOGNITION_INTERVAL
-                or not track.is_confirmed
-            )
-
-            if should_identify:
-                embedding = self.processor.extract_embedding(frame, raw_face_obj)
-
-                if track.is_confirmed:
-                    # we only care about score against the locked identity
-                    score = self.processor.compare_to_person(track.identity)
-                    track.update_identity_score(score)
-
-                    if score < 0.01 or track.average_score < self.UNLOCK_THRESHOLD:
-                        print(f"[Vision] Lost lock on {track.identity} (avg: {track.average_score:..2f})")
-                        track.update_identity() #empty to reset
-                
-                #unknown / still looking for match
-                else:
-                    name, score = self.processor.identify_embedding(embedding)
-                    if score > self.CONFIDENCE_THRESHOLD:
-                        track.update_identity(name, True, score)
-                    else: # still unknown
-                        pass
-
-        commands = self._get_active_commands()
 
         # we have frame & commands; do basic stuff and depending on commands we'll do further processing
         # basic: maybe yolo & major change measure?
