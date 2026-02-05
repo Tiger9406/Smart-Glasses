@@ -27,3 +27,5 @@ python -m api.simulator
 Data types & stream parameters defined in core/config.py
 
 TODO: implement worker logic & coordinator logics
+
+If main doesn shut down properly run kill -9 $(lsof -t -i :8000)

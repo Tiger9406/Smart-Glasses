@@ -15,7 +15,20 @@ SAMPLE_WIDTH = 2
 CHUNK_SIZE = 1024
 
 TARGET_IMAGE = "./api/800x600.jpeg"
-TARGET_AUDIO = "./api/OSR_us_11.wav"
-TARGET_VIDEO = "api/Friends_Clip.mp4"
+TARGET_AUDIO = "./api/OSR_us_11_16k.wav"
 
 DEFAULT_MODEL = "Megatron"
+#model
+PARAKEET_MODEL="mlx-community/parakeet-tdt-0.6b-v3"
+
+#chunking
+AUDIO_CHUNK_SIZE_MS=400     #800 old
+AUDIO_SAMPLE_RATE_HZ=16000
+
+#Streaming context, defaults used in parakeet readme
+CONTEXT_LEFT=64        #256 default both
+CONTEXT_RIGHT=64
+
+#variables for checking if a person stopped talking
+SPEECH_CHUNK_SIZE=1 #each chunk is 0.8 seconds so 3 chunks means they stop speaking for 2.4 seconds to signify a sentence break
+LOUDNESS_THRESHOLD=0.01 #how quiet it needs to be to signify stop talking, can tune this when we get mic based on backround noise

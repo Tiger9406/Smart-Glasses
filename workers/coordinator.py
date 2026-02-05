@@ -56,6 +56,19 @@ class Coordinator(BaseWorker):
                     _bbox = face.get("bbox")
                     # print(f" - ID: {face['track_id']} | Name: {name} ({score:.2f}) | Loc: {bbox}")
 
+        if event.get("type") == "speech":
+            print(f"[Coordinator] {event['text']}") 
+
+        # Current event structure
+        #                 
+        #     "type": "speech",
+        #     "text": text,    (would be the audio transcription)
+        #     "id": session_id,     
+        #     "timestamp": time.time(),
+        #     "final": False,
+        #     "name": Unkown,
+        #     "embedding": 
+
         else:
             print("\n[Coordinator] got other event")
 
