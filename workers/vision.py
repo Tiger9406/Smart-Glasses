@@ -8,21 +8,18 @@ import numpy as np
 from workers.vision_utils.facial_processing.inspireface_processor import (
     InspireFaceProcessor,
 )
+from workers.base import IngestionWorker
 
 
-class VisionWorker(mp.Process):
+class VisionWorker(IngestionWorker):
     def __init__(
         self,
         input_queue: mp.Queue,
         output_queue: mp.Queue,
         vision_command_queue: mp.Queue,
     ):
-        super().__init__(daemon=True)
-        self.input_queue = input_queue
-        self.output_queue = output_queue
+        super().__init__(input_queue, output_queue)
         self.command_queue = vision_command_queue
-        self.running = mp.Event()
-        self.running.set()
 
     def setup(self):
         print("[Vision] Worker setting up")
@@ -107,15 +104,17 @@ class VisionWorker(mp.Process):
                 for track_id in expired_ids:
                     del self.active_identities[track_id]
 
-                self.output_queue.put({"type": "vision_result", "faces": result})
+                try:
+                    self.output_queue.put({"type": "vision_result", "faces": result})
+                except queue.Full:
+                    print("Queue Full; passing")
+                    pass
 
         finally:
             print("[Vision] Releasing resources")
             if hasattr(self, "processor") and self.processor.session:
-                self.processor.session.releasse()
+                self.processor.session.release()
 
-    def shutdown(self):
-        self.running.clear()
 
     def _get_active_commands(self) -> list:
         commands = []
