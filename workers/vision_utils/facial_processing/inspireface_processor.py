@@ -1,18 +1,20 @@
 import inspireface as isf
 from inspireface import FaceInformation
 import numpy as np
-
 from dotenv import load_dotenv
 import os
 
-
+from core.config import DEFAULT_MODEL
 
 class InspireFaceProcessor:
     def __init__(
-        self, model_type = "Megatron", confidence_threshold=0.5, download_model=False
+        self, model_type = DEFAULT_MODEL, model_path = "", confidence_threshold=0.5, download_model=False
     ):
         load_dotenv()
-        model_path = os.getenv("MEGATRON_MODEL_PATH", "")
+        if model_path == "" and DEFAULT_MODEL == "Megatron":
+            model_path = os.getenv("MEGATRON_MODEL_PATH", "")
+        elif model_path == "" and DEFAULT_MODEL == "PIKACHU":
+            model_path = os.getenv("PIKACHU_MODEL_PATH", "")
         self.session = None
         self.known_faces = {} # map for now; we can remove this and make it a db later if known faces is to grow larger
 
@@ -30,7 +32,7 @@ class InspireFaceProcessor:
         else:
             ret = isf.launch(model_type, model_path)
         if not ret:
-            raise RuntimeError("InspireFace launch failed; check given model/path")
+            raise RuntimeError("InspireFace launch failed; likely given an invalid model path")
 
         params = isf.SessionCustomParameter(
             enable_recognition=True,

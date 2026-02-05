@@ -17,3 +17,5 @@ CHUNK_SIZE = 1024
 TARGET_IMAGE = "./api/800x600.jpeg"
 TARGET_AUDIO = "./api/OSR_us_11.wav"
 TARGET_VIDEO = "api/Friends_Clip.mp4"
+
+DEFAULT_MODEL = "Megatron"
