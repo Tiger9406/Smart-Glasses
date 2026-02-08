@@ -1,3 +1,8 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 HOST = "0.0.0.0"
 PORT = 8000
 SERVER_URL = f"ws://localhost:{PORT}/stream"
@@ -12,7 +17,14 @@ TARGET_VIDEO = './api/Friends_Clip.mp4'
 TARGET_IMAGE = "./api/800x600.jpeg"
 
 # model for face rec
-DEFAULT_ISF_MODEL = "Megatron" #make it "Megatron" or for edge "Pikachu"
+DEFAULT_ISF_MODEL = os.getenv("DEFAULT_ISF_MODEL", "Megatron")
+MEGATRON_MODEL_PATH = os.getenv("MEGATRON_MODEL_PATH", "")
+PIKACHU_MODEL_PATH = os.getenv("PIKACHU_MODEL_PATH", "")
+
+def get_model_path(model_type):
+    if model_type == "Megatron":
+        return MEGATRON_MODEL_PATH
+    return PIKACHU_MODEL_PATH
 
 SAMPLE_RATE = 16000
 CHANNELS = 1

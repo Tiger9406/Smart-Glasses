@@ -1,20 +1,16 @@
 import inspireface as isf
 from inspireface import FaceInformation
 import numpy as np
-from dotenv import load_dotenv
-import os
 
-from core.config import DEFAULT_ISF_MODEL
+from core import config
 
 class InspireFaceProcessor:
     def __init__(
-        self, model_type = DEFAULT_ISF_MODEL, model_path = "", confidence_threshold=0.5, download_model=False
+        self, model_type = config.DEFAULT_ISF_MODEL, model_path = None, confidence_threshold=0.5, download_model=False
     ):
-        load_dotenv()
-        if model_path == "" and DEFAULT_ISF_MODEL == "Megatron":
-            model_path = os.getenv("MEGATRON_MODEL_PATH", "")
-        elif model_path == "" and DEFAULT_ISF_MODEL == "Pikachu":
-            model_path = os.getenv("PIKACHU_MODEL_PATH", "")
+        if model_path is None:
+            model_path = config.get_model_path(model_type)
+        
         self.session = None
         self.known_faces = {} # map for now; we can remove this and make it a db later if known faces is to grow larger
 

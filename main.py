@@ -1,4 +1,3 @@
-# entry point
 from contextlib import asynccontextmanager
 
 import uvicorn
