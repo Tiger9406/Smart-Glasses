@@ -55,33 +55,9 @@ async def vision_stream(websocket):
         raise
     except Exception as e:
         print(f"Error in vision stream: {e}")
+        raise e
     finally:
         cap.release()
-
-
-async def _image_stream(websocket):
-    try:
-        with open(config.TARGET_IMAGE, "rb") as f:
-            image_bytes = f.read()
-
-        print(f"Loaded {len(image_bytes)} bytes of image from {config.TARGET_IMAGE}")
-
-        while True:
-            start_time = time.time()
-            try:
-                await websocket.send(config.HEADER_VISION + image_bytes)
-            except websockets.exceptions.ConnectionClosed:
-                print("Vision stream connection closed by server")
-                break
-
-            process_time = time.time() - start_time
-            sleep_time = max(0, config.FRAME_DELAY - process_time)
-            await asyncio.sleep(sleep_time)
-    except asyncio.CancelledError:
-        print("Vision stream task cancelled")
-        raise
-    except Exception as e:
-        print(f"Error in vision stream: {e}")
 
 
 # async func definint audio stream output
@@ -127,6 +103,7 @@ async def audio_stream(websocket):
             raise
         except Exception as e:
             print(f"Error in audio stream: {e}")
+            raise e
 
     print("Audio file closed")
 
@@ -135,8 +112,8 @@ async def stream_glasses_data():
     print("Simulating Smart Glasses Server")
     # repeatedly send over same deafult image
 
-    if not os.path.exists(config.TARGET_IMAGE):
-        print(f"File not found: {config.TARGET_IMAGE}")
+    if not os.path.exists(config.TARGET_VIDEO):
+        print(f"File not found: {config.TARGET_VIDEO}")
         return
 
     if not os.path.exists(config.TARGET_AUDIO):
