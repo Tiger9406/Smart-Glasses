@@ -56,6 +56,12 @@ class InspireFaceProcessor:
         print("[Vision] InspireFace Model initialized")
 
     def register_identity(self, name: str, embedding: np.ndarray):
+        if embedding is None:
+            print(f"[Vision][Identity] Failed to register '{name}': embedding is None")
+            return
+        if not isinstance(embedding, np.ndarray):
+            print(f"[Vision][Identity] Failed to register '{name}': embedding is is not np array")
+            return
         if name not in self.known_faces:
             self.known_faces[name] = []
         self.known_faces[name].append(embedding)
