@@ -12,7 +12,7 @@ TARGET_VIDEO = './api/Friends_Clip.mp4'
 TARGET_IMAGE = "./api/800x600.jpeg"
 
 # model for face rec
-DEFAULT_ISF_MODEL = "Megatron"
+DEFAULT_ISF_MODEL = "Megatron" #make it "Megatron" or for edge "Pikachu"
 
 SAMPLE_RATE = 16000
 CHANNELS = 1

@@ -13,7 +13,7 @@ class InspireFaceProcessor:
         load_dotenv()
         if model_path == "" and DEFAULT_ISF_MODEL == "Megatron":
             model_path = os.getenv("MEGATRON_MODEL_PATH", "")
-        elif model_path == "" and DEFAULT_ISF_MODEL == "PIKACHU":
+        elif model_path == "" and DEFAULT_ISF_MODEL == "Pikachu":
             model_path = os.getenv("PIKACHU_MODEL_PATH", "")
         self.session = None
         self.known_faces = {} # map for now; we can remove this and make it a db later if known faces is to grow larger
