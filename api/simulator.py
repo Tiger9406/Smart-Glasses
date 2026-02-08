@@ -34,9 +34,13 @@ async def vision_stream(websocket):
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 continue
 
-            success, buffer = cv2.imencode(".jpg", frame)
-            if not success:
-                print("Failed to encode frame")
+            try:
+                success, buffer = cv2.imencode(".jpg", frame)
+                if not success:
+                    print("Failed to encode frame")
+                    continue
+            except cv2.error as e:
+                print(f"OpenCV specific error occurrsed: {e}")
                 continue
 
             image_bytes = buffer.tobytes()
@@ -54,7 +58,6 @@ async def vision_stream(websocket):
         print("Vision stream task cancelled")
         raise
     except Exception as e:
-        print(f"Error in vision stream: {e}")
         raise e
     finally:
         cap.release()
@@ -102,7 +105,6 @@ async def audio_stream(websocket):
             print("Audio stream task cancelled")
             raise
         except Exception as e:
-            print(f"Error in audio stream: {e}")
             raise e
 
     print("Audio file closed")
@@ -130,9 +132,15 @@ async def stream_glasses_data():
             vision_task = asyncio.create_task(vision_stream(websocket))
             audio_task = asyncio.create_task(audio_stream(websocket))
 
-            _, pending = await asyncio.wait(
+            done, pending = await asyncio.wait(
                 [vision_task, audio_task], return_when=asyncio.FIRST_COMPLETED
             )
+
+            for task in done:
+                if task.exception():
+                    print(f"Stream crashed w/ error: {task.exception()}")
+                else:
+                    print("Stream finished normally")
 
             # kill remaining process
             for task in pending:
