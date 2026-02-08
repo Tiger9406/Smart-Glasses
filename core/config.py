@@ -14,7 +14,6 @@ RESOLUTION = (1280, 720)
 FPS = 15
 FRAME_DELAY = 1.0 / FPS
 TARGET_VIDEO = './api/Friends_Clip.mp4'
-TARGET_IMAGE = "./api/800x600.jpeg"
 
 # model for face rec
 DEFAULT_ISF_MODEL = os.getenv("DEFAULT_ISF_MODEL", "Megatron")
@@ -25,6 +24,9 @@ def get_model_path(model_type):
     if model_type == "Megatron":
         return MEGATRON_MODEL_PATH
     return PIKACHU_MODEL_PATH
+
+CONFIDENCE_THRESHOLD_DETECTION = 0.5
+CONFIDENCE_THRESHOLD_MATCHING = 0.5
 
 SAMPLE_RATE = 16000
 CHANNELS = 1

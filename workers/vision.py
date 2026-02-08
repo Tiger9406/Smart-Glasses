@@ -10,6 +10,7 @@ from workers.base import IngestionWorker
 from workers.vision_utils.facial_processing.inspireface_processor import (
     InspireFaceProcessor,
 )
+from core.config import FPS
 
 
 class VisionWorker(IngestionWorker):
@@ -150,7 +151,7 @@ class VisionWorker(IngestionWorker):
         return commands
 
     def _init_video_writer(
-        self, frame, output_path="workers/vision_utils/annotated_video.mp4", fps=15.0
+        self, frame, output_path="workers/vision_utils/annotated_video.mp4", fps=FPS
     ):
         """initialize VideoWriter based on the first frame's dimensions"""
         output_dir = os.path.dirname(output_path)
