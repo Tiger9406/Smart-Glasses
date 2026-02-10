@@ -1,3 +1,4 @@
+from workers.base import IngestionWorker
 import queue
 import time
 import uuid
@@ -7,10 +8,9 @@ import numpy as np
 from parakeet_mlx import from_pretrained
 
 from core import config
-from workers.base import BaseWorker
 
 
-class AudioWorker(BaseWorker):
+class AudioWorker(IngestionWorker):
     def setup(self):
         # so it doesn't read the config every single loop
 
@@ -51,7 +51,7 @@ class AudioWorker(BaseWorker):
         silence_count = 0  # track consecutive silent chunks
 
         try:
-            while True:
+            while self.running.is_set():
                 try:
                     raw_bytes = self.input_queue.get(
                         timeout=1.0

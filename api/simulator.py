@@ -3,6 +3,7 @@ import os
 import time
 import wave
 
+import cv2
 import websockets
 
 from core import config
@@ -10,14 +11,40 @@ from core import config
 
 # defining vision
 async def vision_stream(websocket):
+    print(f"Opening video file: {config.TARGET_VIDEO}")
+    cap = cv2.VideoCapture(config.TARGET_VIDEO)
+
+    if not cap.isOpened():
+        print(f"Error opening video file: {config.TARGET_VIDEO}")
+        return
+
+    # frame delay & such based on video itself instead of glob param; otherwise have to
+    # process video further each time
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_delay = 1.0 / fps if fps > 0 else config.FRAME_DELAY
+    print(f"Video streaming at {fps if fps > 0 else 'default'} FPS")
+
     try:
-        with open(config.TARGET_IMAGE, "rb") as f:
-            image_bytes = f.read()
-
-        print(f"Loaded {len(image_bytes)} bytes of image from {config.TARGET_IMAGE}")
-
         while True:
             start_time = time.time()
+            ret, frame = cap.read()
+
+            if not ret:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                continue
+
+            try:
+                success, buffer = cv2.imencode(".jpg", frame)
+                if not success:
+                    print("Failed to encode frame")
+                    continue
+            except cv2.error as e:
+                print(f"OpenCV specific error occurrsed: {e}")
+                continue
+
+            image_bytes = buffer.tobytes()
+
             try:
                 await websocket.send(config.HEADER_VISION + image_bytes)
             except websockets.exceptions.ConnectionClosed:
@@ -25,13 +52,15 @@ async def vision_stream(websocket):
                 break
 
             process_time = time.time() - start_time
-            sleep_time = max(0, config.FRAME_DELAY - process_time)
+            sleep_time = max(0, frame_delay - process_time)
             await asyncio.sleep(sleep_time)
     except asyncio.CancelledError:
         print("Vision stream task cancelled")
         raise
     except Exception as e:
-        print(f"Error in vision stream: {e}")
+        raise e
+    finally:
+        cap.release()
 
 
 # async func definint audio stream output
@@ -76,7 +105,7 @@ async def audio_stream(websocket):
             print("Audio stream task cancelled")
             raise
         except Exception as e:
-            print(f"Error in audio stream: {e}")
+            raise e
 
     print("Audio file closed")
 
@@ -85,8 +114,8 @@ async def stream_glasses_data():
     print("Simulating Smart Glasses Server")
     # repeatedly send over same deafult image
 
-    if not os.path.exists(config.TARGET_IMAGE):
-        print(f"File not found: {config.TARGET_IMAGE}")
+    if not os.path.exists(config.TARGET_VIDEO):
+        print(f"File not found: {config.TARGET_VIDEO}")
         return
 
     if not os.path.exists(config.TARGET_AUDIO):
@@ -103,9 +132,15 @@ async def stream_glasses_data():
             vision_task = asyncio.create_task(vision_stream(websocket))
             audio_task = asyncio.create_task(audio_stream(websocket))
 
-            _, pending = await asyncio.wait(
+            done, pending = await asyncio.wait(
                 [vision_task, audio_task], return_when=asyncio.FIRST_COMPLETED
             )
+
+            for task in done:
+                if task.exception():
+                    print(f"Stream crashed w/ error: {task.exception()}")
+                else:
+                    print("Stream finished normally")
 
             # kill remaining process
             for task in pending:

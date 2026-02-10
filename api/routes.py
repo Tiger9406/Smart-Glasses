@@ -1,14 +1,14 @@
-
-#define endpoints
+# define endpoints
 
 from fastapi import APIRouter, WebSocket
+
 from core import config
 
 router = APIRouter()
 
-#we only have a websocket as of right now
-#maybe we can make it so REST request to start connection & then websocket until REST close connection request
-#for now just do as if it's always websocketed
+# we only have a websocket as of right now
+# maybe we can make it so REST request to start connection & then websocket until REST close connection request
+# for now just do as if it's always websocketed
 
 
 @router.websocket("/stream")
@@ -21,10 +21,10 @@ async def stream_ingest(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_bytes()
-            if not data: 
+            if not data:
                 continue
 
-            #get data type & put into respective queues
+            # get data type & put into respective queues
             header = data[0:1]
             payload = data[1:]
             if header == config.HEADER_VISION:
@@ -35,7 +35,8 @@ async def stream_ingest(websocket: WebSocket):
                 print("Unkonwn header type")
 
     except Exception:
-         pass
+        pass
+
 
 def setup_routes(app):
-     app.include_router(router)
+    app.include_router(router)

@@ -1,6 +1,3 @@
-# entry point
-
-import multiprocessing as mp
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -8,9 +5,9 @@ from fastapi import FastAPI
 
 from api.routes import setup_routes
 from core import config
-from core.coordinator import Coordinator
 from core.shared_mem import SharedMem
 from workers.audio import AudioWorker
+from workers.coordinator import Coordinator
 from workers.vision import VisionWorker
 
 
@@ -23,7 +20,11 @@ async def lifespan(app: FastAPI):
 
     brain = Coordinator(shared_mem.results_queue)
     audio_worker = AudioWorker(shared_mem.audio_queue, shared_mem.results_queue)
-    vision_worker = VisionWorker(shared_mem.vision_queue, shared_mem.results_queue)
+    vision_worker = VisionWorker(
+        shared_mem.vision_queue,
+        shared_mem.results_queue,
+        shared_mem.vision_command_queue,
+    )
 
     brain.start()
     audio_worker.start()
@@ -31,12 +32,24 @@ async def lifespan(app: FastAPI):
 
     yield  # app running after this
 
-    print("Cleaning resources")
-    # terminate any running processes
+    print("[System] Shutting down workers")
+    workers = [audio_worker, vision_worker, brain]
+    for w in workers:
+        w.shutdown()
 
-    brain.terminate()
-    audio_worker.terminate()
-    vision_worker.terminate()
+    # queues not empty when we stop it; instead we just stop it from joining & chuck away data
+    print("[System] Shutting down queues")
+    shared_mem.shutdown()
+
+    print("[System] Waiting for workers to join...")
+    for w in workers:
+        w.join(timeout=1.0)
+        if w.is_alive():
+            print(f"Force killing {w.name}...")
+            w.terminate()
+            w.join()
+
+    print("[System] All workers stopped")
 
 
 def start_server():
@@ -54,6 +67,6 @@ if __name__ == "__main__":
         uvicorn.run("main:app", host=config.HOST, port=config.PORT, log_level="error")
     except KeyboardInterrupt:
         print("Shutting down server...")
-        mp.current_process().terminate()
+        # uvicorn gone call shutdowns
     finally:
         print("Server has been shut down.")
