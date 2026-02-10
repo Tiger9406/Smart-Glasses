@@ -126,7 +126,7 @@ class VisionWorker(IngestionWorker):
                     "bbox": (x1, y1, x2, y2),
                     "name": self.active_identities[track_id]["name"],
                     "score": self.active_identities[track_id]["score"],
-                    "emb": emb,
+                    "emb": emb, #embedding is something only when we re-identify it; lower bandwidth
                 }
             )
 

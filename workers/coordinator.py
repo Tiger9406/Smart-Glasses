@@ -44,7 +44,7 @@ class Coordinator(BaseWorker):
                 "bbox": (x1, y1, x2, y2),
                 "name": self.active_identities[track_id]["name"],
                 "score": self.active_identities[track_id]["score"],
-                "emb": emb
+                "emb": emb # could be none if embedding not extracted on this frame
             }"""
 
             # potential code to work with input faces; nothing for now, too many frames
