@@ -31,6 +31,7 @@ class VisionWorker(IngestionWorker):
         self.active_identities = {}
         self.RECHECK_INTERVAL = 2.0  # seconds between re-verifying identification
         self.CONFIDENCE_THRESHOLD = 0.5
+        self.LOST_TRACK_THRESHOLD = 1.0  # keep ids alive for a second before removing
         print("[Vision] Ready")
 
     def run(self):
@@ -62,15 +63,16 @@ class VisionWorker(IngestionWorker):
             if self.video_writer:
                 self.video_writer.release()
                 print("[Vision] VideoWriter released")
-    
+
     def _facial_loop(self, frame):
         raw_detection_faces = self.processor.detect_faces(frame)
         result = []
-        current_frame_ids = set()
+
+        # determine if we should try to identify him (compare to known people)
+        now = time.time()
 
         for face in raw_detection_faces:
             track_id = face.track_id
-            current_frame_ids.add(track_id)
 
             if (
                 track_id not in self.active_identities
@@ -79,13 +81,13 @@ class VisionWorker(IngestionWorker):
                     "name": "Unknown",
                     "score": 0.0,
                     "checked_ts": 0,
+                    "last_seen": now,
                 }
+            else:
+                self.active_identities[track_id]["last_seen"] = now
 
             # get our stored data on this guy
             identity_data = self.active_identities[track_id]
-
-            # determine if we should try to identify him (compare to known people)
-            now = time.time()
 
             emb = None
 
@@ -100,13 +102,21 @@ class VisionWorker(IngestionWorker):
 
                 # if strongly looks like someone we know
                 if score > self.CONFIDENCE_THRESHOLD:
-                    self.active_identities[track_id] = {
-                        "name": name,
-                        "score": score,
-                        "checked_ts": now,
-                    }
+                    self.active_identities[track_id].update(
+                        {
+                            "name": name,
+                            "score": score,
+                            "checked_ts": now,
+                        }
+                    )
                 else:  # still don't know
-                    self.active_identities[track_id]["checked_ts"] = now
+                    self.active_identities[track_id].update(
+                        {
+                            "name": "Unknown",  # don't recognize this guy, reset
+                            "score": score,
+                            "checked_ts": now,
+                        }
+                    )
 
             # form result to send back to coordinator
             x1, y1, x2, y2 = map(int, face.location)
@@ -129,16 +139,19 @@ class VisionWorker(IngestionWorker):
             self.video_writer.write(frame)
 
         # remove expired ids (untracked for a while)
-        expired_ids = [
-            track_id
-            for track_id in self.active_identities
-            if track_id not in current_frame_ids
-        ]
+        expired_ids = []
+        for track_id, data in self.active_identities.items():
+            # if last seen longer than allowed threshold
+            if (now - data["last_seen"]) > self.LOST_TRACK_THRESHOLD:
+                expired_ids.append(track_id)
+
         for track_id in expired_ids:
             del self.active_identities[track_id]
 
         try:
-            self.output_queue.put({"type": "vision_result", "faces": result}, block=False)
+            self.output_queue.put(
+                {"type": "vision_result", "faces": result}, block=False
+            )
             # print("[Vision] added to ouput queue")
         except queue.Full:
             print("Queue Full; passing")
