@@ -53,86 +53,7 @@ class VisionWorker(IngestionWorker):
                 # if self.video_writer is None:
                 #     self._init_video_writer(frame)
 
-                raw_detection_faces = self.processor.detect_faces(frame)
-
-                result = []
-                current_frame_ids = set()
-
-                for face in raw_detection_faces:
-                    track_id = face.track_id
-                    current_frame_ids.add(track_id)
-
-                    if (
-                        track_id not in self.active_identities
-                    ):  # new box; not previously tracked
-                        self.active_identities[track_id] = {
-                            "name": "Unknown",
-                            "score": 0.0,
-                            "checked_ts": 0,
-                        }
-
-                    # get our stored data on this guy
-                    identity_data = self.active_identities[track_id]
-
-                    # determine if we should try to identify him (compare to known people)
-                    now = time.time()
-
-                    emb = None
-
-                    # only do cosine sim if we don't know them or it's been a while since we last checked
-                    should_recognize = (
-                        identity_data["name"] == "Unknown"
-                        or (now - identity_data["checked_ts"]) > self.RECHECK_INTERVAL
-                    )
-                    if should_recognize:
-                        emb = self.processor.extract_embedding(frame, face)
-                        name, score = self.processor.identify_embedding(emb)
-
-                        # if strongly looks like someone we know
-                        if score > self.CONFIDENCE_THRESHOLD:
-                            self.active_identities[track_id] = {
-                                "name": name,
-                                "score": score,
-                                "checked_ts": now,
-                            }
-                        else:  # still don't know
-                            self.active_identities[track_id]["checked_ts"] = now
-
-                    # form result to send back to coordinator
-                    x1, y1, x2, y2 = map(int, face.location)
-                    result.append(
-                        {
-                            "track_id": track_id,
-                            "bbox": (x1, y1, x2, y2),
-                            "name": self.active_identities[track_id]["name"],
-                            "score": self.active_identities[track_id]["score"],
-                            "emb": emb,
-                        }
-                    )
-
-                    if self.video_writer:
-                        current_name = self.active_identities[track_id]["name"]
-                        label_text = f"{current_name} (ID: {track_id})"
-                        self._draw_face_label(frame, (x1, y1, x2, y2), label_text)
-
-                if self.video_writer:
-                    self.video_writer.write(frame)
-
-                # remove expired ids (untracked for a while)
-                expired_ids = [
-                    track_id
-                    for track_id in self.active_identities
-                    if track_id not in current_frame_ids
-                ]
-                for track_id in expired_ids:
-                    del self.active_identities[track_id]
-
-                try:
-                    self.output_queue.put({"type": "vision_result", "faces": result})
-                    # print("[Vision] added to ouput queue")
-                except queue.Full:
-                    print("Queue Full; passing")
-                    pass
+                self._facial_loop(frame)
 
         finally:
             print("[Vision] Releasing resources")
@@ -141,6 +62,87 @@ class VisionWorker(IngestionWorker):
             if self.video_writer:
                 self.video_writer.release()
                 print("[Vision] VideoWriter released")
+    
+    def _facial_loop(self, frame):
+        raw_detection_faces = self.processor.detect_faces(frame)
+        result = []
+        current_frame_ids = set()
+
+        for face in raw_detection_faces:
+            track_id = face.track_id
+            current_frame_ids.add(track_id)
+
+            if (
+                track_id not in self.active_identities
+            ):  # new box; not previously tracked
+                self.active_identities[track_id] = {
+                    "name": "Unknown",
+                    "score": 0.0,
+                    "checked_ts": 0,
+                }
+
+            # get our stored data on this guy
+            identity_data = self.active_identities[track_id]
+
+            # determine if we should try to identify him (compare to known people)
+            now = time.time()
+
+            emb = None
+
+            # only do cosine sim if we don't know them or it's been a while since we last checked
+            should_recognize = (
+                identity_data["name"] == "Unknown"
+                or (now - identity_data["checked_ts"]) > self.RECHECK_INTERVAL
+            )
+            if should_recognize:
+                emb = self.processor.extract_embedding(frame, face)
+                name, score = self.processor.identify_embedding(emb)
+
+                # if strongly looks like someone we know
+                if score > self.CONFIDENCE_THRESHOLD:
+                    self.active_identities[track_id] = {
+                        "name": name,
+                        "score": score,
+                        "checked_ts": now,
+                    }
+                else:  # still don't know
+                    self.active_identities[track_id]["checked_ts"] = now
+
+            # form result to send back to coordinator
+            x1, y1, x2, y2 = map(int, face.location)
+            result.append(
+                {
+                    "track_id": track_id,
+                    "bbox": (x1, y1, x2, y2),
+                    "name": self.active_identities[track_id]["name"],
+                    "score": self.active_identities[track_id]["score"],
+                    "emb": emb,
+                }
+            )
+
+            if self.video_writer:
+                current_name = self.active_identities[track_id]["name"]
+                label_text = f"{current_name} (ID: {track_id})"
+                self._draw_face_label(frame, (x1, y1, x2, y2), label_text)
+
+        if self.video_writer:
+            self.video_writer.write(frame)
+
+        # remove expired ids (untracked for a while)
+        expired_ids = [
+            track_id
+            for track_id in self.active_identities
+            if track_id not in current_frame_ids
+        ]
+        for track_id in expired_ids:
+            del self.active_identities[track_id]
+
+        try:
+            self.output_queue.put({"type": "vision_result", "faces": result}, block=False)
+            # print("[Vision] added to ouput queue")
+        except queue.Full:
+            print("Queue Full; passing")
+            pass
 
     def _get_active_commands(self) -> list:
         commands = []

@@ -19,7 +19,7 @@ class BaseWorker(mp.Process):
 
 
 class IngestionWorker(BaseWorker):
-    def __init__(self, input_queue, output_queue):
+    def __init__(self, input_queue: mp.Queue, output_queue: mp.Queue):
         super().__init__()
         self.input_queue=input_queue
         self.output_queue = output_queue
