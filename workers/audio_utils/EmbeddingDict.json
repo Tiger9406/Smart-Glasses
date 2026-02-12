@@ -1,0 +1,6 @@
+{
+    "Shaun": ["workers/audio_utils/embeddings/Shaun1.npy"],
+    "Matt": ["workers/audio_utils/embeddings/Matt1.npy"],
+    "Tiger": ["workers/audio_utils/embeddings/Tiger1.npy"]
+
+}

@@ -1,7 +1,8 @@
-from workers.base import IngestionWorker
+import json
 import queue
 import time
 import uuid
+from typing import Optional
 
 import mlx.core as mx
 import numpy as np
@@ -9,6 +10,7 @@ import onnxruntime as ort
 from parakeet_mlx import from_pretrained
 
 from core import config
+from workers.base import IngestionWorker
 
 
 class AudioWorker(IngestionWorker):
@@ -26,7 +28,16 @@ class AudioWorker(IngestionWorker):
         self.loudness_threshold = config.LOUDNESS_THRESHOLD
         self.chunk_samples = int(self.sample_rate * self.chunk_ms / 1000)
         self.chunk_bytes = self.chunk_samples * 2
+        self.similarity_threshold = config.SIMILARITY_THRESHOLD
 
+        # load embeddings in from json so we can manually add em n stuff
+        with open("workers/audio_utils/EmbeddingDict.json") as f:
+            speaker_paths = json.load(f)
+
+        # average their embeddings in indentify_speaker
+        self.known_speakers = {
+            name: [np.load(p) for p in paths] for name, paths in speaker_paths.items()
+        }
         print(
             f"[AudioWorker] Ready. Chunk: {self.chunk_ms}ms ({self.chunk_bytes} bytes)"
         )
@@ -42,8 +53,22 @@ class AudioWorker(IngestionWorker):
     def get_embedding(self, audio):
         return self.session.run(None, {"audio": audio})[0][0]
 
-    def cosine_sim(a, b):
+    def cosine_sim(self, a, b):
         return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+    def identify_speaker(self, embedding) -> Optional[str]:
+        # optional so i can convert it to last speaker if it throws None
+        best_name = None
+        best_score = self.similarity_threshold
+
+        for person in self.known_speakers:
+            avg_emb = np.mean(self.known_speakers[person], axis=0)
+
+            similarity = self.cosine_sim(embedding, avg_emb)
+            if similarity > best_score:
+                best_score = similarity
+                best_name = person
+        return best_name
 
     def run(self):
         self.setup()
@@ -52,7 +77,7 @@ class AudioWorker(IngestionWorker):
         context_size = (self.context_left, self.context_right)
 
         audio_chunk_holder = []  # this is for storing all chunks to voice recognize at end of sentence
-        last_speaker = "Unkown"
+        last_speaker = None
 
         # session state
         session_id = None
@@ -119,7 +144,12 @@ class AudioWorker(IngestionWorker):
                                     1, -1
                                 )  # to make it 2d arr
                                 embedding = self.get_embedding(audio_reshaped)
-
+                                identity = self.identify_speaker(embedding)
+                                if identity:
+                                    speaker = identity
+                                    last_speaker = speaker
+                                else:
+                                    speaker = last_speaker or "Unkown"
                                 if last_text:
                                     self.output_queue.put(
                                         {
@@ -129,7 +159,7 @@ class AudioWorker(IngestionWorker):
                                             "timestamp": time.time(),
                                             "final": True,
                                             "embedding": embedding,
-                                            # name and embedding added here soon
+                                            "name": speaker,
                                         }
                                     )
                                 # close session
@@ -139,6 +169,7 @@ class AudioWorker(IngestionWorker):
                                 session_id = None
                                 last_text = ""
                                 silence_count = 0
+                                audio_chunk_holder = []
         finally:
             if ctx:
                 ctx.__exit__(None, None, None)
