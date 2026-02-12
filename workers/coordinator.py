@@ -72,7 +72,7 @@ class Coordinator(BaseWorker):
             "name": Unkown,
             "embedding":
             """
-            print(f"[Coordinator] {event['text']}")
+            print(f"[Coordinator] {event['name']}: {event['text']}")
 
         else:
             print("\n[Coordinator] got other event")
