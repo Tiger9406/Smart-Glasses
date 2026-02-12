@@ -6,11 +6,11 @@ import time
 import cv2
 import numpy as np
 
+from core.config import FPS
 from workers.base import IngestionWorker
 from workers.vision_utils.facial_processing.inspireface_processor import (
     InspireFaceProcessor,
 )
-from core.config import FPS
 
 
 class VisionWorker(IngestionWorker):
@@ -129,7 +129,7 @@ class VisionWorker(IngestionWorker):
 
                 try:
                     self.output_queue.put({"type": "vision_result", "faces": result})
-                    print("[Vision] added to ouput queue")
+                    # print("[Vision] added to ouput queue")
                 except queue.Full:
                     print("Queue Full; passing")
                     pass
