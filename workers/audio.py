@@ -2,7 +2,6 @@ import json
 import queue
 import time
 import uuid
-from typing import Optional
 
 import mlx.core as mx
 import numpy as np
@@ -36,8 +35,10 @@ class AudioWorker(IngestionWorker):
 
         # average their embeddings in indentify_speaker
         self.known_speakers = {
-            name: [np.load(p) for p in paths] for name, paths in speaker_paths.items()
+            name: np.mean([np.load(p) for p in paths], axis=0)
+            for name, paths in speaker_paths.items()
         }
+
         print(
             f"[AudioWorker] Ready. Chunk: {self.chunk_ms}ms ({self.chunk_bytes} bytes)"
         )
@@ -56,18 +57,24 @@ class AudioWorker(IngestionWorker):
     def cosine_sim(self, a, b):
         return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
-    def identify_speaker(self, embedding) -> Optional[str]:
+    def identify_speaker(self, embedding, last_speaker) -> str:
         # optional so i can convert it to last speaker if it throws None
-        best_name = None
+        best_name = config.UNKNOWN_SPEAKER
         best_score = self.similarity_threshold
 
-        for person in self.known_speakers:
-            avg_emb = np.mean(self.known_speakers[person], axis=0)
+        if last_speaker != config.UNKNOWN_SPEAKER:
+            avg_emb_last_speaker = self.known_speakers[last_speaker]
+            similarity_last_speaker = self.cosine_sim(embedding, avg_emb_last_speaker)
+            if similarity_last_speaker > self.similarity_threshold:
+                best_name = last_speaker
+                best_score = similarity_last_speaker
 
+        for person, avg_emb in self.known_speakers.items():
             similarity = self.cosine_sim(embedding, avg_emb)
             if similarity > best_score:
                 best_score = similarity
                 best_name = person
+
         return best_name
 
     def run(self):
@@ -77,7 +84,7 @@ class AudioWorker(IngestionWorker):
         context_size = (self.context_left, self.context_right)
 
         audio_chunk_holder = []  # this is for storing all chunks to voice recognize at end of sentence
-        last_speaker = None
+        last_speaker = config.UNKNOWN_SPEAKER
 
         # session state
         session_id = None
@@ -144,12 +151,9 @@ class AudioWorker(IngestionWorker):
                                     1, -1
                                 )  # to make it 2d arr
                                 embedding = self.get_embedding(audio_reshaped)
-                                identity = self.identify_speaker(embedding)
-                                if identity:
-                                    speaker = identity
-                                    last_speaker = speaker
-                                else:
-                                    speaker = last_speaker or "Unkown"
+                                speaker = self.identify_speaker(embedding, last_speaker)
+                                last_speaker = speaker
+
                                 if last_text:
                                     self.output_queue.put(
                                         {

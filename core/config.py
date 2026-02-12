@@ -44,6 +44,8 @@ PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
 AUDIO_CHUNK_SIZE_MS = 400  # 800 old
 AUDIO_SAMPLE_RATE_HZ = 16000
 
+UNKNOWN_SPEAKER = "Unknown"
+
 # Streaming context, defaults used in parakeet readme
 CONTEXT_LEFT = 64  # 256 default both
 CONTEXT_RIGHT = 64
