@@ -6,7 +6,7 @@ import time
 import cv2
 import numpy as np
 
-from core.config import FPS
+from core.config import ANNOTATED_OUTPUT_PATH, DEFAULT_NAME, FPS
 from workers.base import IngestionWorker
 from workers.vision_utils.facial_processing.inspireface_processor import (
     InspireFaceProcessor,
@@ -78,7 +78,7 @@ class VisionWorker(IngestionWorker):
                 track_id not in self.active_identities
             ):  # new box; not previously tracked
                 self.active_identities[track_id] = {
-                    "name": "Unknown",
+                    "name": DEFAULT_NAME,
                     "score": 0.0,
                     "checked_ts": 0,
                     "last_seen": now,
@@ -93,7 +93,7 @@ class VisionWorker(IngestionWorker):
 
             # only do cosine sim if we don't know them or it's been a while since we last checked
             should_recognize = (
-                identity_data["name"] == "Unknown"
+                identity_data["name"] == DEFAULT_NAME
                 or (now - identity_data["checked_ts"]) > self.RECHECK_INTERVAL
             )
             if should_recognize:
@@ -112,7 +112,7 @@ class VisionWorker(IngestionWorker):
                 else:  # still don't know
                     self.active_identities[track_id].update(
                         {
-                            "name": "Unknown",  # don't recognize this guy, reset
+                            "name": DEFAULT_NAME,  # don't recognize this guy, reset
                             "score": score,
                             "checked_ts": now,
                         }
@@ -126,7 +126,7 @@ class VisionWorker(IngestionWorker):
                     "bbox": (x1, y1, x2, y2),
                     "name": self.active_identities[track_id]["name"],
                     "score": self.active_identities[track_id]["score"],
-                    "emb": emb, #embedding is something only when we re-identify it; lower bandwidth
+                    "emb": emb,  # embedding is something only when we re-identify it; lower bandwidth
                 }
             )
 
@@ -165,9 +165,7 @@ class VisionWorker(IngestionWorker):
         # deal with registering face for instance
         return commands
 
-    def _init_video_writer(
-        self, frame, output_path="workers/vision_utils/annotated_video.mp4", fps=FPS
-    ):
+    def _init_video_writer(self, frame, output_path=ANNOTATED_OUTPUT_PATH, fps=FPS):
         """initialize VideoWriter based on the first frame's dimensions"""
         output_dir = os.path.dirname(output_path)
         if output_dir and not os.path.exists(output_dir):

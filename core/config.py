@@ -1,5 +1,6 @@
 import os
 
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,11 +16,13 @@ RESOLUTION = (1280, 720)
 FPS = 15
 FRAME_DELAY = 1.0 / FPS
 TARGET_VIDEO = "./api/Friends_Clip.mp4"
+TARGET_VIDEO = "./api/Friends_Clip.mp4"
 
 # model for face rec
 DEFAULT_ISF_MODEL = os.getenv("DEFAULT_ISF_MODEL", "Megatron")
 MEGATRON_MODEL_PATH = os.getenv("MEGATRON_MODEL_PATH", "")
 PIKACHU_MODEL_PATH = os.getenv("PIKACHU_MODEL_PATH", "")
+ANNOTATED_OUTPUT_PATH = "./api/annotated_video.mp4"
 
 
 def get_model_path(model_type):
@@ -27,6 +30,8 @@ def get_model_path(model_type):
         return MEGATRON_MODEL_PATH
     return PIKACHU_MODEL_PATH
 
+
+DEFAULT_NAME = "Unknown"
 
 CONFIDENCE_THRESHOLD_DETECTION = 0.5
 CONFIDENCE_THRESHOLD_MATCHING = 0.5
@@ -39,12 +44,14 @@ TARGET_AUDIO = "./api/MattandShaun.wav"
 
 # model for audio
 PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
+PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
 
 # chunking
 AUDIO_CHUNK_SIZE_MS = 400  # 800 old
 AUDIO_SAMPLE_RATE_HZ = 16000
-
-UNKNOWN_SPEAKER = "Unknown"
+# chunking
+AUDIO_CHUNK_SIZE_MS = 400  # 800 old
+AUDIO_SAMPLE_RATE_HZ = 16000
 
 # Streaming context, defaults used in parakeet readme
 CONTEXT_LEFT = 64  # 256 default both

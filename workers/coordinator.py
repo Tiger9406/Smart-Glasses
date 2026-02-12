@@ -6,6 +6,8 @@ import queue
 
 from workers.base import BaseWorker
 
+# from core.config import DEFAULT_NAME
+
 
 class Coordinator(BaseWorker):
     def __init__(self, results_queue: mp.Queue):
@@ -53,7 +55,7 @@ class Coordinator(BaseWorker):
             if faces:
                 print(f"\n [Coordinator] Vision Event: detected {len(faces)} faces")
                 for face in faces:
-                    _name = face.get("name", "Unknown")
+                    _name = face.get("name", DEFAULT_NAME)
                     _score = face.get("score", 0.0)
                     _bbox = face.get("bbox")
                     # print(f" - ID: {face['track_id']} | Name: {name} ({score:.2f}) | Loc: {bbox}")
