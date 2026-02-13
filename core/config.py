@@ -44,7 +44,7 @@ TARGET_AUDIO = "./api/MattandShaun.wav"
 
 # model for audio
 PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
-PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
+UNKNOWN_SPEAKER = "Unknown"
 
 # chunking
 AUDIO_CHUNK_SIZE_MS = 400  # 800 old
