@@ -2,11 +2,12 @@ import multiprocessing as mp
 import os
 import queue
 import time
+from collections import deque
 
 import cv2
 import numpy as np
 
-from core.config import ANNOTATED_OUTPUT_PATH, DEFAULT_NAME, FPS
+from core import config
 from workers.base import IngestionWorker
 from workers.vision_utils.facial_processing.inspireface_processor import (
     InspireFaceProcessor,
@@ -32,6 +33,10 @@ class VisionWorker(IngestionWorker):
         self.RECHECK_INTERVAL = 2.0  # seconds between re-verifying identification
         self.CONFIDENCE_THRESHOLD = 0.5
         self.LOST_TRACK_THRESHOLD = 1.0  # keep ids alive for a second before removing
+
+        self.buffer_len = int(config.FPS * config.BUFFER_DURATION)
+        self.frame_buffer = deque(maxlen=self.buffer_len)
+
         print("[Vision] Ready")
 
     def run(self):
@@ -44,6 +49,9 @@ class VisionWorker(IngestionWorker):
                     raw_bytes = self.input_queue.get(timeout=0.01)
                 except queue.Empty:
                     continue
+
+                self.frame_buffer.append((time.time(), raw_bytes))
+
                 frame = cv2.imdecode(
                     np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR
                 )
@@ -53,7 +61,7 @@ class VisionWorker(IngestionWorker):
                 # for testing purposes: if we wanna see bounding box behavior
                 # if self.video_writer is None:
                 #     self._init_video_writer(frame)
-
+                self._handle_commands()
                 self._facial_loop(frame)
 
         finally:
@@ -78,7 +86,7 @@ class VisionWorker(IngestionWorker):
                 track_id not in self.active_identities
             ):  # new box; not previously tracked
                 self.active_identities[track_id] = {
-                    "name": DEFAULT_NAME,
+                    "name": config.DEFAULT_NAME,
                     "score": 0.0,
                     "checked_ts": 0,
                     "last_seen": now,
@@ -93,7 +101,7 @@ class VisionWorker(IngestionWorker):
 
             # only do cosine sim if we don't know them or it's been a while since we last checked
             should_recognize = (
-                identity_data["name"] == DEFAULT_NAME
+                identity_data["name"] == config.DEFAULT_NAME
                 or (now - identity_data["checked_ts"]) > self.RECHECK_INTERVAL
             )
             if should_recognize:
@@ -112,7 +120,7 @@ class VisionWorker(IngestionWorker):
                 else:  # still don't know
                     self.active_identities[track_id].update(
                         {
-                            "name": DEFAULT_NAME,  # don't recognize this guy, reset
+                            "name": config.DEFAULT_NAME,  # don't recognize this guy, reset
                             "score": score,
                             "checked_ts": now,
                         }
@@ -157,15 +165,25 @@ class VisionWorker(IngestionWorker):
             print("Queue Full; passing")
             pass
 
-    def _get_active_commands(self) -> list:
+    def _handle_commands(self):
+
         commands = []
         while not self.command_queue.empty():
             commands.append(self.command_queue.get_nowait())
 
-        # deal with registering face for instance
-        return commands
+        try:
+            for command in commands:  # command handler
+                if command == "GET_VIDEO_CONTEXT":
+                    self._handle_get_context(command["request_id"])
+        except Exception as e:
+            print(f"[Vision] Command error: {e}")
 
-    def _init_video_writer(self, frame, output_path=ANNOTATED_OUTPUT_PATH, fps=FPS):
+    def _handle_get_context(self, request_id):  # handling api request
+        pass
+
+    def _init_video_writer(
+        self, frame, output_path=config.ANNOTATED_OUTPUT_PATH, fps=config.FPS
+    ):
         """initialize VideoWriter based on the first frame's dimensions"""
         output_dir = os.path.dirname(output_path)
         if output_dir and not os.path.exists(output_dir):

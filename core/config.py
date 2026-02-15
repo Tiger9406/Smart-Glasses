@@ -1,6 +1,5 @@
 import os
 
-
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -31,6 +30,7 @@ def get_model_path(model_type):
     return PIKACHU_MODEL_PATH
 
 
+BUFFER_DURATION = 5
 DEFAULT_NAME = "Unknown"
 
 CONFIDENCE_THRESHOLD_DETECTION = 0.5
