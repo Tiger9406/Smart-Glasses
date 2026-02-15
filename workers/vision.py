@@ -1,6 +1,8 @@
+import asyncio
 import multiprocessing as mp
 import os
 import queue
+import threading
 import time
 from collections import deque
 
@@ -9,9 +11,8 @@ import numpy as np
 
 from core import config
 from workers.base import IngestionWorker
-from workers.vision_utils.facial_processing.inspireface_processor import (
-    InspireFaceProcessor,
-)
+from workers.vision_utils.inspireface_processor import InspireFaceProcessor
+from workers.vision_utils.VLM import VLMClient
 
 
 class VisionWorker(IngestionWorker):
@@ -36,6 +37,9 @@ class VisionWorker(IngestionWorker):
 
         self.buffer_len = int(config.FPS * config.BUFFER_DURATION)
         self.frame_buffer = deque(maxlen=self.buffer_len)
+        self.vlm_client = VLMClient(
+            api_key=config.GEMINI_API_KEY, url=config.GEMINI_API_LINK
+        )
 
         print("[Vision] Ready")
 
@@ -45,6 +49,7 @@ class VisionWorker(IngestionWorker):
 
         try:
             while self.running.is_set():
+                self._handle_commands()
                 try:
                     raw_bytes = self.input_queue.get(timeout=0.01)
                 except queue.Empty:
@@ -61,7 +66,6 @@ class VisionWorker(IngestionWorker):
                 # for testing purposes: if we wanna see bounding box behavior
                 # if self.video_writer is None:
                 #     self._init_video_writer(frame)
-                self._handle_commands()
                 self._facial_loop(frame)
 
         finally:
@@ -81,6 +85,7 @@ class VisionWorker(IngestionWorker):
 
         for face in raw_detection_faces:
             track_id = face.track_id
+            x1, y1, x2, y2 = map(int, face.location)
 
             if (
                 track_id not in self.active_identities
@@ -127,7 +132,6 @@ class VisionWorker(IngestionWorker):
                     )
 
             # form result to send back to coordinator
-            x1, y1, x2, y2 = map(int, face.location)
             result.append(
                 {
                     "track_id": track_id,
@@ -166,20 +170,51 @@ class VisionWorker(IngestionWorker):
             pass
 
     def _handle_commands(self):
-
-        commands = []
         while not self.command_queue.empty():
-            commands.append(self.command_queue.get_nowait())
+            try:
+                command = self.command_queue.get_nowait()
+                if command.get("cmd") == "GET_VIDEO_CONTEXT":
+                    if len(self.frame_buffer) > 0:
+                        snapshot = list(self.frame_buffer)
+                        # get just the bytes
+                        selected_frames = [data for _, data in snapshot[::3]]
 
+                        # pass the frames to the thread
+                        t = threading.Thread(
+                            target=self._handle_vlm,
+                            args=(
+                                selected_frames,
+                                command["prompt"],
+                                command["request_id"],
+                            ),
+                        )
+                        t.start()
+                    else:
+                        print("[Vision] Can't analyze context because buffer empty")
+                else:  # handle other types of commands; maybe register face
+                    pass
+            except Exception as e:
+                print(f"[Vision] Command error: {e}")
+
+    def _handle_vlm(self, frames, prompt: str, request_id):  # handling api request
+        """
+        Runs in background thread for async
+        """
         try:
-            for command in commands:  # command handler
-                if command == "GET_VIDEO_CONTEXT":
-                    self._handle_get_context(command["request_id"])
-        except Exception as e:
-            print(f"[Vision] Command error: {e}")
+            response_text = asyncio.run(  # create new event loop in this thread
+                self.vlm_client.analyze_video_frames(frames, prompt)
+            )
 
-    def _handle_get_context(self, request_id):  # handling api request
-        pass
+            self.output_queue.put(
+                {
+                    "type": "vlm_result",
+                    "request_id": request_id,
+                    "text": response_text,
+                    "timestamp": time.time(),
+                }
+            )
+        except Exception as e:
+            print(f"[vision] VLM task error: {e}")
 
     def _init_video_writer(
         self, frame, output_path=config.ANNOTATED_OUTPUT_PATH, fps=config.FPS
