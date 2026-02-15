@@ -31,6 +31,8 @@ def get_model_path(model_type):
 
 
 BUFFER_DURATION = 5
+GEMINI_API_KEY = ""
+GEMINI_API_LINK = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 DEFAULT_NAME = "Unknown"
 
 CONFIDENCE_THRESHOLD_DETECTION = 0.5
