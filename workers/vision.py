@@ -196,7 +196,7 @@ class VisionWorker(IngestionWorker):
             except Exception as e:
                 print(f"[Vision] Command error: {e}")
 
-    def _handle_vlm(self, frames, prompt: str, request_id):  # handling api request
+    def _handle_vlm(self, frames, prompt: str, request_id: int):  # handling api request
         """
         Runs in background thread for async
         """
