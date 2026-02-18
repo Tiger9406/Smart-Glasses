@@ -2,13 +2,25 @@ import base64
 
 import aiohttp
 
-from core.config import TEMPERATURE, MAXOUTPUTTOKENS
+from core.config import MAXOUTPUTTOKENS, TEMPERATURE
 
 
 class VLMClient:
-    def __init__(self, api_key: str, url: str):
+    def __init__(self, api_key: str, url: str, timeout_seconds=20):
         self.api_key = api_key
         self.url = url
+        self.timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+        self._session = None
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession(timeout=self.timeout)
+        return self._session
+
+    async def close(self):
+        if self._session and not self._session.closed:
+            await self._session.close()
+        print("[VLM] Session closed")
 
     async def analyze_video_frames(self, frames: list[bytes], prompt: str) -> str:
         """
@@ -27,19 +39,23 @@ class VLMClient:
 
         payload = {
             "contents": [{"parts": parts}],
-            "generationConfig": {"temperature": TEMPERATURE, "maxOutputTokens": MAXOUTPUTTOKENS},
+            "generationConfig": {
+                "temperature": TEMPERATURE,
+                "maxOutputTokens": MAXOUTPUTTOKENS,
+            },
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                self.url,
-                json=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "x-goog-api-key": self.api_key,
-                },
-            ) as response:
-                return await self._handle_response(response)
+        session = await self._get_session()
+
+        async with session.post(
+            self.url,
+            json=payload,
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": self.api_key,
+            },
+        ) as response:
+            return await self._handle_response(response)
 
     async def _handle_response(self, response):
         if response.status != 200:
@@ -48,7 +64,27 @@ class VLMClient:
 
         result = await response.json()
 
-        try:
-            return result["candidates"][0]["content"]["parts"][0]["text"]
+        prompt_feedback = result.get("promptFeedback", {})
+        if prompt_feedback.get("blockReason"):  # blocked
+            raise ValueError(f"Prompt blocked: {prompt_feedback['blockReason']}")
+
+        candidates = result.get("candidates", [])
+        if not candidates:  # complete blcok or filter
+            raise ValueError(f"No candidates returned. Full response: {result}")
+
+        candidate = candidates[0]
+
+        finish_reason = candidate.get("finishReason")
+        if finish_reason and finish_reason != "STOP":  # may have stopped bc safety
+            safety_ratings = candidate.get("safetyRatings", [])
+            raise ValueError(
+                f"Generation stopped due to: {finish_reason}. Safety Ratings: {safety_ratings}"
+            )
+
+        try:  # get text
+            return candidate["content"]["parts"][0]["text"]
         except (KeyError, IndexError):
-            raise ValueError(f"Unexpected JSON structure: {result}")
+            # Fallback if structure is valid but content is unexpectedly missing
+            raise ValueError(
+                f"Valid finishReason but missing text content. Response: {result}"
+            )

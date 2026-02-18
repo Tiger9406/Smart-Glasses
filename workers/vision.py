@@ -41,7 +41,22 @@ class VisionWorker(IngestionWorker):
             api_key=config.GEMINI_API_KEY, url=config.GEMINI_API_LINK
         )
 
+        # async thread for continual loop for vlm
+        self.loop = asyncio.new_event_loop()
+        self.async_thread = threading.Thread( #assigns loop to thread
+            target=self._start_background_loop, daemon=True
+        )
+        self.async_thread.start()
+
         print("[Vision] Ready")
+
+    def _start_background_loop(self):
+        """
+        spins a separate thread, keeps an event loop open
+        so we can reuse the VLMClient session across multiple requests.
+        """
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_forever() # blocking; awaits something thrown at self.loop
 
     def run(self):
         # for now some basic logic about facial recognition; avoids re-recognizing too often
@@ -75,6 +90,21 @@ class VisionWorker(IngestionWorker):
             if self.video_writer:
                 self.video_writer.release()
                 print("[Vision] VideoWriter released")
+
+            if self.loop and self.loop.is_running():
+                # schedule to close coroutine
+                future = asyncio.run_coroutine_threadsafe(
+                    self.vlm_client.close(), self.loop
+                )
+                try:
+                    future.result(timeout=5)
+                except Exception as e:
+                    print(f"[Vision] Error closing VLM client: {e}")
+
+                self.loop.call_soon_threadsafe(self.loop.stop)
+
+            if self.async_thread:
+                self.async_thread.join(timeout=1)
 
     def _facial_loop(self, frame):
         raw_detection_faces = self.processor.detect_faces(frame)
@@ -179,16 +209,14 @@ class VisionWorker(IngestionWorker):
                         # get just the bytes
                         selected_frames = [data for _, data in snapshot[::3]]
 
-                        # pass the frames to the thread
-                        t = threading.Thread(
-                            target=self._handle_vlm,
-                            args=(
+                        asyncio.run_coroutine_threadsafe(
+                            self._handle_vlm(
                                 selected_frames,
                                 command["prompt"],
                                 command["request_id"],
                             ),
+                            self.loop,
                         )
-                        t.start()
                     else:
                         print("[Vision] Can't analyze context because buffer empty")
                 else:  # handle other types of commands; maybe register face
@@ -196,14 +224,11 @@ class VisionWorker(IngestionWorker):
             except Exception as e:
                 print(f"[Vision] Command error: {e}")
 
-    def _handle_vlm(self, frames, prompt: str, request_id: int):  # handling api request
-        """
-        Runs in background thread for async
-        """
+    async def _handle_vlm(
+        self, frames, prompt: str, request_id: int
+    ):  # handling api request
         try:
-            response_text = asyncio.run(  # create new event loop in this thread
-                self.vlm_client.analyze_video_frames(frames, prompt)
-            )
+            response_text = await self.vlm_client.analyze_video_frames(frames, prompt)
 
             self.output_queue.put(
                 {
@@ -214,7 +239,7 @@ class VisionWorker(IngestionWorker):
                 }
             )
         except Exception as e:
-            print(f"[vision] VLM task error: {e}")
+            print(f"[Vision] VLM task error: {e}")
 
     def _init_video_writer(
         self, frame, output_path=config.ANNOTATED_OUTPUT_PATH, fps=config.FPS
