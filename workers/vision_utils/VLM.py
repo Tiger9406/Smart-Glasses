@@ -2,6 +2,8 @@ import base64
 
 import aiohttp
 
+from core.config import TEMPERATURE, MAXOUTPUTTOKENS
+
 
 class VLMClient:
     def __init__(self, api_key: str, url: str):
@@ -25,7 +27,7 @@ class VLMClient:
 
         payload = {
             "contents": [{"parts": parts}],
-            "generationConfig": {"temperature": 0.4, "maxOutputTokens": 1000},
+            "generationConfig": {"temperature": TEMPERATURE, "maxOutputTokens": MAXOUTPUTTOKENS},
         }
 
         async with aiohttp.ClientSession() as session:
