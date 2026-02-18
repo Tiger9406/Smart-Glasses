@@ -7,7 +7,7 @@ import time
 
 from workers.base import BaseWorker
 
-# from core.config import DEFAULT_NAME
+from core.config import VLM_ACTIVE
 
 
 class Coordinator(BaseWorker):
@@ -44,7 +44,8 @@ class Coordinator(BaseWorker):
 
     def _test_VLM(self):
         # comment return statement to test VLM funcitonality
-        return
+        if not VLM_ACTIVE:
+            return
         if time.time() - self.start_time > 5 and self.request_number == 0:
             command = {
                 "cmd": "GET_VIDEO_CONTEXT",

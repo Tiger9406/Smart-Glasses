@@ -23,6 +23,10 @@ MEGATRON_MODEL_PATH = os.getenv("MEGATRON_MODEL_PATH", "")
 PIKACHU_MODEL_PATH = os.getenv("PIKACHU_MODEL_PATH", "")
 ANNOTATED_OUTPUT_PATH = "./api/annotated_video.mp4"
 
+DEFAULT_NAME = "Unknown"
+CONFIDENCE_THRESHOLD_DETECTION = 0.5
+CONFIDENCE_THRESHOLD_MATCHING = 0.5
+
 
 def get_model_path(model_type):
     if model_type == "Megatron":
@@ -35,10 +39,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_API_LINK = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 TEMPERATURE = 0.4
 MAXOUTPUTTOKENS = 1000
-DEFAULT_NAME = "Unknown"
-
-CONFIDENCE_THRESHOLD_DETECTION = 0.5
-CONFIDENCE_THRESHOLD_MATCHING = 0.5
+VLM_ACTIVE = False
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
