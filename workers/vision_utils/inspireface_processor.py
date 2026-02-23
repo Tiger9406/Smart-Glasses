@@ -3,6 +3,7 @@ import numpy as np
 from inspireface import FaceInformation
 
 from core import config
+from core.database import DatabaseManager
 
 
 class InspireFaceProcessor:
@@ -17,7 +18,9 @@ class InspireFaceProcessor:
             model_path = config.get_model_path(model_type)
 
         self.session = None
-        self.known_faces = {}  # map for now; we can remove this and make it a db later if known faces is to grow larger
+        self.db = DatabaseManager()
+        self.known_faces = self.db.get_all_faces()
+        print(f"[Vision] loaded {len(self.known_faces)} identities from database")
 
         self._initialize_model(
             model_type, model_path, confidence_threshold, download_model
@@ -64,7 +67,10 @@ class InspireFaceProcessor:
             return
         if name not in self.known_faces:
             self.known_faces[name] = []
+        
         self.known_faces[name].append(embedding)
+        self.db.save_face_embedding(name, embedding)
+        print(f"[Vision] Saved new face embedding for '{name}' to database.")
 
     def detect_faces(self, image: np.ndarray):
         return self.session.face_detection(image)
