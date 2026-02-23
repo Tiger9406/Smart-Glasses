@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI):
 
     app.state.system = shared_mem
 
-    brain = Coordinator(shared_mem.results_queue)
+    brain = Coordinator(shared_mem.results_queue, shared_mem.vision_command_queue)
     audio_worker = AudioWorker(shared_mem.audio_queue, shared_mem.results_queue)
     vision_worker = VisionWorker(
         shared_mem.vision_queue,

@@ -1,16 +1,18 @@
+import asyncio
 import multiprocessing as mp
 import os
 import queue
+import threading
 import time
+from collections import deque
 
 import cv2
 import numpy as np
 
-from core.config import FPS
+from core import config
 from workers.base import IngestionWorker
-from workers.vision_utils.facial_processing.inspireface_processor import (
-    InspireFaceProcessor,
-)
+from workers.vision_utils.inspireface_processor import InspireFaceProcessor
+from workers.vision_utils.VLM import VLMClient
 
 
 class VisionWorker(IngestionWorker):
@@ -31,7 +33,30 @@ class VisionWorker(IngestionWorker):
         self.active_identities = {}
         self.RECHECK_INTERVAL = 2.0  # seconds between re-verifying identification
         self.CONFIDENCE_THRESHOLD = 0.5
+        self.LOST_TRACK_THRESHOLD = 1.0  # keep ids alive for a second before removing
+
+        self.buffer_len = int(config.FPS * config.BUFFER_DURATION)
+        self.frame_buffer = deque(maxlen=self.buffer_len)
+        self.vlm_client = VLMClient(
+            api_key=config.GEMINI_API_KEY, url=config.GEMINI_API_LINK
+        )
+
+        # async thread for continual loop for vlm
+        self.loop = asyncio.new_event_loop()
+        self.async_thread = threading.Thread( #assigns loop to thread
+            target=self._start_background_loop, daemon=True
+        )
+        self.async_thread.start()
+
         print("[Vision] Ready")
+
+    def _start_background_loop(self):
+        """
+        spins a separate thread, keeps an event loop open
+        so we can reuse the VLMClient session across multiple requests.
+        """
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_forever() # blocking; awaits something thrown at self.loop
 
     def run(self):
         # for now some basic logic about facial recognition; avoids re-recognizing too often
@@ -39,10 +64,14 @@ class VisionWorker(IngestionWorker):
 
         try:
             while self.running.is_set():
+                self._handle_commands()
                 try:
                     raw_bytes = self.input_queue.get(timeout=0.01)
                 except queue.Empty:
                     continue
+
+                self.frame_buffer.append((time.time(), raw_bytes))
+
                 frame = cv2.imdecode(
                     np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR
                 )
@@ -52,87 +81,7 @@ class VisionWorker(IngestionWorker):
                 # for testing purposes: if we wanna see bounding box behavior
                 # if self.video_writer is None:
                 #     self._init_video_writer(frame)
-
-                raw_detection_faces = self.processor.detect_faces(frame)
-
-                result = []
-                current_frame_ids = set()
-
-                for face in raw_detection_faces:
-                    track_id = face.track_id
-                    current_frame_ids.add(track_id)
-
-                    if (
-                        track_id not in self.active_identities
-                    ):  # new box; not previously tracked
-                        self.active_identities[track_id] = {
-                            "name": "Unknown",
-                            "score": 0.0,
-                            "checked_ts": 0,
-                        }
-
-                    # get our stored data on this guy
-                    identity_data = self.active_identities[track_id]
-
-                    # determine if we should try to identify him (compare to known people)
-                    now = time.time()
-
-                    emb = None
-
-                    # only do cosine sim if we don't know them or it's been a while since we last checked
-                    should_recognize = (
-                        identity_data["name"] == "Unknown"
-                        or (now - identity_data["checked_ts"]) > self.RECHECK_INTERVAL
-                    )
-                    if should_recognize:
-                        emb = self.processor.extract_embedding(frame, face)
-                        name, score = self.processor.identify_embedding(emb)
-
-                        # if strongly looks like someone we know
-                        if score > self.CONFIDENCE_THRESHOLD:
-                            self.active_identities[track_id] = {
-                                "name": name,
-                                "score": score,
-                                "checked_ts": now,
-                            }
-                        else:  # still don't know
-                            self.active_identities[track_id]["checked_ts"] = now
-
-                    # form result to send back to coordinator
-                    x1, y1, x2, y2 = map(int, face.location)
-                    result.append(
-                        {
-                            "track_id": track_id,
-                            "bbox": (x1, y1, x2, y2),
-                            "name": self.active_identities[track_id]["name"],
-                            "score": self.active_identities[track_id]["score"],
-                            "emb": emb,
-                        }
-                    )
-
-                    if self.video_writer:
-                        current_name = self.active_identities[track_id]["name"]
-                        label_text = f"{current_name} (ID: {track_id})"
-                        self._draw_face_label(frame, (x1, y1, x2, y2), label_text)
-
-                if self.video_writer:
-                    self.video_writer.write(frame)
-
-                # remove expired ids (untracked for a while)
-                expired_ids = [
-                    track_id
-                    for track_id in self.active_identities
-                    if track_id not in current_frame_ids
-                ]
-                for track_id in expired_ids:
-                    del self.active_identities[track_id]
-
-                try:
-                    self.output_queue.put({"type": "vision_result", "faces": result})
-                    # print("[Vision] added to ouput queue")
-                except queue.Full:
-                    print("Queue Full; passing")
-                    pass
+                self._facial_loop(frame)
 
         finally:
             print("[Vision] Releasing resources")
@@ -142,16 +91,158 @@ class VisionWorker(IngestionWorker):
                 self.video_writer.release()
                 print("[Vision] VideoWriter released")
 
-    def _get_active_commands(self) -> list:
-        commands = []
-        while not self.command_queue.empty():
-            commands.append(self.command_queue.get_nowait())
+            if self.loop and self.loop.is_running():
+                # schedule to close coroutine
+                future = asyncio.run_coroutine_threadsafe(
+                    self.vlm_client.close(), self.loop
+                )
+                try:
+                    future.result(timeout=5)
+                except Exception as e:
+                    print(f"[Vision] Error closing VLM client: {e}")
 
-        # deal with registering face for instance
-        return commands
+                self.loop.call_soon_threadsafe(self.loop.stop)
+
+            if self.async_thread:
+                self.async_thread.join(timeout=1)
+
+    def _facial_loop(self, frame):
+        raw_detection_faces = self.processor.detect_faces(frame)
+        result = []
+
+        # determine if we should try to identify him (compare to known people)
+        now = time.time()
+
+        for face in raw_detection_faces:
+            track_id = face.track_id
+            x1, y1, x2, y2 = map(int, face.location)
+
+            if (
+                track_id not in self.active_identities
+            ):  # new box; not previously tracked
+                self.active_identities[track_id] = {
+                    "name": config.DEFAULT_NAME,
+                    "score": 0.0,
+                    "checked_ts": 0,
+                    "last_seen": now,
+                }
+            else:
+                self.active_identities[track_id]["last_seen"] = now
+
+            # get our stored data on this guy
+            identity_data = self.active_identities[track_id]
+
+            emb = None
+
+            # only do cosine sim if we don't know them or it's been a while since we last checked
+            should_recognize = (
+                identity_data["name"] == config.DEFAULT_NAME
+                or (now - identity_data["checked_ts"]) > self.RECHECK_INTERVAL
+            )
+            if should_recognize:
+                emb = self.processor.extract_embedding(frame, face)
+                name, score = self.processor.identify_embedding(emb)
+
+                # if strongly looks like someone we know
+                if score > self.CONFIDENCE_THRESHOLD:
+                    self.active_identities[track_id].update(
+                        {
+                            "name": name,
+                            "score": score,
+                            "checked_ts": now,
+                        }
+                    )
+                else:  # still don't know
+                    self.active_identities[track_id].update(
+                        {
+                            "name": config.DEFAULT_NAME,  # don't recognize this guy, reset
+                            "score": score,
+                            "checked_ts": now,
+                        }
+                    )
+
+            # form result to send back to coordinator
+            result.append(
+                {
+                    "track_id": track_id,
+                    "bbox": (x1, y1, x2, y2),
+                    "name": self.active_identities[track_id]["name"],
+                    "score": self.active_identities[track_id]["score"],
+                    "emb": emb,  # embedding is something only when we re-identify it; lower bandwidth
+                }
+            )
+
+            if self.video_writer:
+                current_name = self.active_identities[track_id]["name"]
+                label_text = f"{current_name} (ID: {track_id})"
+                self._draw_face_label(frame, (x1, y1, x2, y2), label_text)
+
+        if self.video_writer:
+            self.video_writer.write(frame)
+
+        # remove expired ids (untracked for a while)
+        expired_ids = []
+        for track_id, data in self.active_identities.items():
+            # if last seen longer than allowed threshold
+            if (now - data["last_seen"]) > self.LOST_TRACK_THRESHOLD:
+                expired_ids.append(track_id)
+
+        for track_id in expired_ids:
+            del self.active_identities[track_id]
+
+        try:
+            self.output_queue.put(
+                {"type": "vision_result", "faces": result}, block=False
+            )
+            # print("[Vision] added to ouput queue")
+        except queue.Full:
+            print("Queue Full; passing")
+            pass
+
+    def _handle_commands(self):
+        while not self.command_queue.empty():
+            try:
+                command = self.command_queue.get_nowait()
+                if command.get("cmd") == "GET_VIDEO_CONTEXT":
+                    if len(self.frame_buffer) > 0:
+                        snapshot = list(self.frame_buffer)
+                        # get just the bytes
+                        selected_frames = [data for _, data in snapshot[::3]]
+
+                        asyncio.run_coroutine_threadsafe(
+                            self._handle_vlm(
+                                selected_frames,
+                                command["prompt"],
+                                command["request_id"],
+                            ),
+                            self.loop,
+                        )
+                    else:
+                        print("[Vision] Can't analyze context because buffer empty")
+                else:  # handle other types of commands; maybe register face
+                    pass
+            except Exception as e:
+                print(f"[Vision] Command error: {e}")
+
+    async def _handle_vlm(
+        self, frames, prompt: str, request_id: int
+    ):  # handling api request
+        try:
+            response_text = await self.vlm_client.analyze_video_frames(frames, prompt)
+
+            self.output_queue.put(
+                {
+                    "type": "vlm_result",
+                    "request_id": request_id,
+                    "text": response_text,
+                    "timestamp": time.time(),
+                }
+            )
+        except Exception as e:
+            print(f"[Vision] VLM task error: {e}")
 
     def _init_video_writer(
-        self, frame, output_path="workers/vision_utils/annotated_video.mp4", fps=FPS
+        self, frame, output_path=config.ANNOTATED_OUTPUT_PATH, fps=config.FPS
     ):
         """initialize VideoWriter based on the first frame's dimensions"""
         output_dir = os.path.dirname(output_path)

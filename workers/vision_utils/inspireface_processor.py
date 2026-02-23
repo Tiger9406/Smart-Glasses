@@ -85,7 +85,7 @@ class InspireFaceProcessor:
     def identify_embedding(self, embedding: np.ndarray, threshold=config.CONFIDENCE_THRESHOLD_MATCHING):
         # given embedding, compare to known faces and return best match name and according score
         best_score = 0.0
-        best_match = "Unknown"
+        best_match = config.DEFAULT_NAME
 
         if self.known_faces:
             for name, _ in self.known_faces.items():
