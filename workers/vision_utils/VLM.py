@@ -1,6 +1,4 @@
 import base64
-import json
-import types
 
 import aiohttp
 
@@ -106,37 +104,28 @@ class VLMClient:
         Latest speech from {name}: "{speech_text}"
 
         Extract any NEW, concrete information worth remembering (preferences, names, intentions).
-        If there is no new information, return an empty list."""
+        Be short and consice."""
 
-        try:
-            # model has to return json
-            response = self.client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=types.Schema(
-                        type=types.Type.ARRAY,
-                        items=types.Schema(
-                            type=types.Type.STRING,
-                        ),
-                    ),
-                ),
-            )
+        parts = [{"text": prompt}]
 
-            # check against having empty stuff
-            new_facts = [f for f in json.loads(response.text) if f.strip()]
+        session = await self._get_session()
 
-            # Only send to the Coordinator if the list actually has items
-            if new_facts:
-                self.output_queue.put(
-                    {"type": "llm_result", "name": name, "new_facts": new_facts}
-                )
-                print(
-                    f"[LLM Worker] Sent {len(new_facts)} new facts for {name} to Coordinator."
-                )
-            else:
-                print(f"[LLM Worker] No new facts found for {name}.")
+        payload = {
+            "contents": [{"parts": parts}],
+            "generationConfig": {
+                "temperature": TEMPERATURE,
+                "maxOutputTokens": MAXOUTPUTTOKENS,
+            },
+        }
 
-        except Exception as e:
-            print(f"[LLM Worker] Error calling Gemini API: {e}")
+        async with session.post(
+            self.url,
+            json=payload,
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": self.api_key,
+            },
+        ) as response:
+            new_facts = await self._handle_response(response)
+
+        return name, new_facts

@@ -1,6 +1,8 @@
 # coordinator: looks at global queue and processes output from sub workers vision and audio
 # kinda like the decision making part
 
+import asyncio
+import json
 import multiprocessing as mp
 import queue
 import time
@@ -55,6 +57,22 @@ class Coordinator(BaseWorker):
             print("[Coordinator] Put command in vision queue")
             self.commands_queue.put_nowait(command)
 
+        async def _handle_gemini(self, prompt, request_id: int):  # handling api request
+            try:
+                name, new_facts = await self.vlm_client.analyze_memory(prompt)
+
+                if new_facts:
+                    self.output_queue.put(
+                        {"type": "llm_result", "name": name, "new_facts": new_facts}
+                    )
+                    print(
+                        f"[LLM Worker] Sent {len(new_facts)} new facts for {name} to Coordinator."
+                    )
+                else:
+                    print(f"[LLM Worker] No new facts found for {name}.")
+            except Exception as e:
+                print(f"[Coordinator] LLM task error: {e}")
+
     def _handle_event(self, event):
         # handling events; gotta coordinate event data format
         # for instance if event type is a face in view, we throw it on the picture or sum
@@ -86,17 +104,51 @@ class Coordinator(BaseWorker):
             pass
 
         elif event_type == "speech":
-            # given:
-            """
-            "type": "speech",
-            "text": text,    (would be the audio transcription)
-            "id": session_id,
-            "timestamp": time.time(),
-            "final": False,
-            "name": Unkown,
-            "embedding":
-            """
-            print(f"[Coordinator] {event['name']}: {event['text']}")
+            if not event.get("final", False):
+                return
+            name = event.get("name", "Unknown")
+            speech_text = event.get("text", "").strip()
+            print(f"[Coordinator] {name}: {speech_text}")
+
+            if not speech_text:
+                return
+
+            current_facts = self.memory_db.get(name, [])
+            if current_facts:
+                facts_string = "\n".join([f"- {fact}" for fact in current_facts])
+
+                payload = {
+                    "cmd": "UPDATE_MEMORY",
+                    "name": name,
+                    "speech_text": speech_text,
+                    "facts_string": facts_string,
+                    "request_id": event.get(id, -1),
+                }
+
+                asyncio.run_coroutine_threadsafe(
+                    self._handle_gemini(payload),
+                    self.loop,
+                )
+
+        elif event_type == "llm_result":
+            name = event.get("name", "Unknown")
+            new_facts = event.get("new_facts", [])
+
+            if new_facts:
+                # update the DB
+                current_facts = self.memory_db.get(name, [])
+                self.memory_db[name] = current_facts + new_facts
+
+                # save to disk safely, maybe do this on coord shutdown but its prob good to keep updating the mem
+                # could dispatch the saving every x seconds or something also
+                try:
+                    with open("workers/coordinator_utils/ContextDict.json", "w") as f:
+                        json.dump(self.memory_db, f, indent=2)
+                    print(
+                        f"[Coordinator] Successfully saved memory for {name}: {new_facts}"
+                    )
+                except Exception as e:
+                    print(f"[Coordinator] Error writing to ContextDict.json: {e}")
 
         elif event_type == "vlm_result":
             """"
