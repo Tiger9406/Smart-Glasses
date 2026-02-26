@@ -5,9 +5,8 @@ import multiprocessing as mp
 import queue
 import time
 
-from workers.base import BaseWorker
-
 from core.config import VLM_ACTIVE
+from workers.base import BaseWorker
 
 
 class Coordinator(BaseWorker):

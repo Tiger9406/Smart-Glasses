@@ -1,4 +1,6 @@
 import base64
+import json
+import types
 
 import aiohttp
 
@@ -88,3 +90,53 @@ class VLMClient:
             raise ValueError(
                 f"Valid finishReason but missing text content. Response: {result}"
             )
+
+    async def analyze_memory(self, command):
+        if not self.api_key:
+            raise ValueError("API Key not configured")
+
+        name = command.get("name", "Unknown")
+        facts_string = command.get("facts_string", "")
+        speech_text = command.get("speech_text", "")
+
+        prompt = f"""You are a memory extraction module. 
+        Current known facts about {name}:
+        {facts_string if facts_string else "None."}
+
+        Latest speech from {name}: "{speech_text}"
+
+        Extract any NEW, concrete information worth remembering (preferences, names, intentions).
+        If there is no new information, return an empty list."""
+
+        try:
+            # model has to return json
+            response = self.client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=types.Schema(
+                        type=types.Type.ARRAY,
+                        items=types.Schema(
+                            type=types.Type.STRING,
+                        ),
+                    ),
+                ),
+            )
+
+            # check against having empty stuff
+            new_facts = [f for f in json.loads(response.text) if f.strip()]
+
+            # Only send to the Coordinator if the list actually has items
+            if new_facts:
+                self.output_queue.put(
+                    {"type": "llm_result", "name": name, "new_facts": new_facts}
+                )
+                print(
+                    f"[LLM Worker] Sent {len(new_facts)} new facts for {name} to Coordinator."
+                )
+            else:
+                print(f"[LLM Worker] No new facts found for {name}.")
+
+        except Exception as e:
+            print(f"[LLM Worker] Error calling Gemini API: {e}")
