@@ -21,7 +21,7 @@ def convert_array(binary_data: bytes):
 
 
 sqlite3.register_adapter(np.ndarray, adapt_array)
-sqlite3.register_adapter("ARRAY", convert_array)
+sqlite3.register_converter("ARRAY", convert_array)
 
 
 class DatabaseManager:
