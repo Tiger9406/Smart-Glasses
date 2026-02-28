@@ -8,3 +8,5 @@ __pycache__/
 *.mov
 /api/video_converter.py
 api/annotated_video.mp4
+
+*.db
