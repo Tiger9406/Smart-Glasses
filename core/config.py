@@ -35,7 +35,7 @@ def get_model_path(model_type):
 
 
 REGISTER_TEST = True
-
+SAVE_ANNOTATED_VID = False
 
 BUFFER_DURATION = 5
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
