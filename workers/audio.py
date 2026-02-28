@@ -35,7 +35,7 @@ class AudioWorker(IngestionWorker):
         # average their embeddings in indentify_speaker
         self.known_speakers = {
             name: np.mean(embeddings, axis=0)
-            for name, embeddings in speaker_embeddings.item()
+            for name, embeddings in speaker_embeddings.items()
         }
 
         print(f"[Audio] Loaded {len(self.known_speakers)} voice identities from database")
