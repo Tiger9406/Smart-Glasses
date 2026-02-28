@@ -8,7 +8,7 @@ import onnxruntime as ort
 from parakeet_mlx import from_pretrained
 
 from core import config
-from core.database import DatabaseManager
+from database.database import DatabaseManager
 from workers.base import IngestionWorker
 
 

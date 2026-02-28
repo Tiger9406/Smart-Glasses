@@ -3,7 +3,7 @@ import numpy as np
 from inspireface import FaceInformation
 
 from core import config
-from core.database import DatabaseManager
+from database.database import DatabaseManager
 
 
 class InspireFaceProcessor:

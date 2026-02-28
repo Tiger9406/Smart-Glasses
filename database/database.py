@@ -164,7 +164,7 @@ class DatabaseManager:
                 FROM chat_history h
                 JOIN users u ON h.user_id = u.id
                 WHERE u.name = ?
-                ORDER BY timestamp DESC
+                ORDER BY h.id DESC
                 LIMIT ?
             """, (name, limit))
             
