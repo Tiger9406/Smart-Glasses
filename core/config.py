@@ -34,6 +34,9 @@ def get_model_path(model_type):
     return PIKACHU_MODEL_PATH
 
 
+REGISTER_TEST = True
+
+
 BUFFER_DURATION = 5
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_API_LINK = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
