@@ -4,10 +4,11 @@
 import multiprocessing as mp
 import queue
 import time
+import inspireface as isf
+import numpy as np
 
+from core.config import TEST_REGISTER_IDENTITY, VLM_ACTIVE, SAMPLE_EMBEDDING_PATHS
 from workers.base import BaseWorker
-
-from core.config import VLM_ACTIVE
 
 
 class Coordinator(BaseWorker):
@@ -56,6 +57,28 @@ class Coordinator(BaseWorker):
             print("[Coordinator] Put command in vision queue")
             self.commands_queue.put_nowait(command)
 
+    def _test_register_identity(self, event: list[dict]):
+        if not TEST_REGISTER_IDENTITY:
+            return
+        faces = event.get("faces", [])
+        for name, emb_path in SAMPLE_EMBEDDING_PATHS.items():
+            emb = np.load(emb_path)
+            for face in faces:
+                new_emb = face.get('emb', None)
+                if new_emb is None:
+                    continue
+                score = isf.feature_comparison(emb, new_emb)
+                if score > 0.5:
+                    command = {
+                        "cmd": "REGISTER_FACE",
+                        "track_id": face.get("track_id"), 
+                        "name": name, 
+                        "emb": new_emb
+                    }
+                    self.request_number+=1
+                    print(f"[Coordinator] Put command to register {name} in vision queue")
+                    self.commands_queue.put_nowait(command)
+
     def _handle_event(self, event):
         # handling events; gotta coordinate event data format
         # for instance if event type is a face in view, we throw it on the picture or sum
@@ -84,6 +107,7 @@ class Coordinator(BaseWorker):
                     # print(f" - ID: {face['track_id']} | Name: {name} ({score:.2f}) | Loc: {bbox}")
 
             """
+            self._test_register_identity(event)
             pass
 
         elif event_type == "speech":

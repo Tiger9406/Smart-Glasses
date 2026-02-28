@@ -34,7 +34,7 @@ def get_model_path(model_type):
     return PIKACHU_MODEL_PATH
 
 
-TEST_REGISTER_IDENTITY = True
+TEST_REGISTER_IDENTITY = False
 SAMPLE_EMBEDDING_PATHS = {
     "Joey" : "database/sample_data/joey_tribbiani.npy",
     "Rachel" : "database/sample_data/rachel_greene.npy",
