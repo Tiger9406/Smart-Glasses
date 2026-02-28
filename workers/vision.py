@@ -79,8 +79,8 @@ class VisionWorker(IngestionWorker):
                     continue
 
                 # for testing purposes: if we wanna see bounding box behavior
-                # if self.video_writer is None:
-                #     self._init_video_writer(frame)
+                if config.SAVE_ANNOTATED_VID and self.video_writer is None:
+                    self._init_video_writer(frame)
 
                 self._facial_loop(frame)
 
