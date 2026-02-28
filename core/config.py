@@ -34,7 +34,12 @@ def get_model_path(model_type):
     return PIKACHU_MODEL_PATH
 
 
-REGISTER_TEST = True
+TEST_REGISTER_IDENTITY = True
+SAMPLE_EMBEDDING_PATHS = {
+    "Joey" : "database/sample_data/joey_tribbiani.npy",
+    "Rachel" : "database/sample_data/rachel_greene.npy",
+    "Ross" : "database/sample_data/ross_geller.npy",
+}
 SAVE_ANNOTATED_VID = False
 
 BUFFER_DURATION = 5
