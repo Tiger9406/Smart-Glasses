@@ -35,10 +35,10 @@ def get_model_path(model_type):
 
 
 TEST_REGISTER_IDENTITY = False
-SAMPLE_EMBEDDING_PATHS = {
-    "Joey" : "database/sample_data/joey_tribbiani.npy",
-    "Rachel" : "database/sample_data/rachel_greene.npy",
-    "Ross" : "database/sample_data/ross_geller.npy",
+SAMPLE_FACE_EMBEDDING_PATHS = {
+    "Joey" : "database/sample_data/face_joey_tribbiani.npy",
+    "Rachel" : "database/sample_data/face_rachel_greene.npy",
+    "Ross" : "database/sample_data/face_ross_geller.npy",
 }
 SAVE_ANNOTATED_VID = False
 

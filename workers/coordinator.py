@@ -7,7 +7,7 @@ import time
 import inspireface as isf
 import numpy as np
 
-from core.config import TEST_REGISTER_IDENTITY, VLM_ACTIVE, SAMPLE_EMBEDDING_PATHS
+from core.config import TEST_REGISTER_IDENTITY, VLM_ACTIVE, SAMPLE_FACE_EMBEDDING_PATHS
 from workers.base import BaseWorker
 
 
@@ -61,7 +61,7 @@ class Coordinator(BaseWorker):
         if not TEST_REGISTER_IDENTITY:
             return
         faces = event.get("faces", [])
-        for name, emb_path in SAMPLE_EMBEDDING_PATHS.items():
+        for name, emb_path in SAMPLE_FACE_EMBEDDING_PATHS.items():
             emb = np.load(emb_path)
             for face in faces:
                 new_emb = face.get('emb', None)

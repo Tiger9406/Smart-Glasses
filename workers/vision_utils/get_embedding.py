@@ -5,9 +5,9 @@ import numpy as np
 if __name__ == "__main__":
     processor = InspireFaceProcessor()
     image_root = "database/sample_data/"
-    image_name = "ross_geller"
-    image_type = ".jpg"
-    img_path = f"{image_root}{image_name}{image_type}"
+    person_name = "ross_geller"
+    image_type = "_face.jpg"
+    img_path = f"{image_root}{person_name}{image_type}"
     image = cv2.imread(img_path)
 
     if image is None:
@@ -16,7 +16,7 @@ if __name__ == "__main__":
         faces = processor.detect_faces(image)
         if len(faces) > 0:
             embedding = processor.extract_embedding(image, faces[0])
-            output_file = f"{image_root}{image_name}.npy"
+            output_file = f"{image_root}face_{person_name}.npy"
             np.save(output_file, embedding)
             
             print(f"Success! Embedding saved to {output_file}")
