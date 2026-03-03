@@ -1,17 +1,18 @@
+# coordinator: looks at global queue and processes output from sub workers vision and audio
+# kinda like the decision making part
+
+import asyncio
 import multiprocessing as mp
 import queue
+import threading
 import time
 from collections import deque
 
 import inspireface as isf
 import numpy as np
 
-from core.config import (
-    DEFAULT_NAME,
-    SAMPLE_FACE_EMBEDDING_PATHS,
-    TEST_REGISTER_IDENTITY,
-    VLM_ACTIVE,
-)
+from api.gemini_client import GeminiClient
+from core import config
 from workers.base import BaseWorker
 
 
@@ -36,12 +37,30 @@ class Coordinator(BaseWorker):
         self.vlm_tested = False
         self.sample_embeddings = {}
         self.registered_tracks = set()
-        if TEST_REGISTER_IDENTITY and SAMPLE_FACE_EMBEDDING_PATHS:
+        if config.TEST_REGISTER_IDENTITY and config.SAMPLE_FACE_EMBEDDING_PATHS:
             self.sample_embeddings = {
                 name: np.load(path)
-                for name, path in SAMPLE_FACE_EMBEDDING_PATHS.items()
+                for name, path in config.SAMPLE_FACE_EMBEDDING_PATHS.items()
             }
             self.registered_tracks = set()
+
+        self.gemini_client = GeminiClient(
+            api_key=config.GEMINI_API_KEY, url=config.GEMINI_API_LINK
+        )
+
+        # async thread for continual loop for vlm
+        self.loop = asyncio.new_event_loop()
+        self.async_thread = threading.Thread(  # assigns loop to thread
+            target=self._start_background_loop, daemon=True
+        )
+        self.async_thread.start()
+
+    def _start_background_loop(self):
+        """
+        spins a separate thread, keeps an event loop open
+        """
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_forever()  # blocking; awaits something thrown at self.loop
 
     def _update_vision_cache(self, faces):
         """Add and remove old face cache"""
@@ -71,7 +90,7 @@ class Coordinator(BaseWorker):
         max_area = 0
         best_face = None
         for face in faces:
-            if face.get("name", DEFAULT_NAME) != DEFAULT_NAME:
+            if face.get("name", config.DEFAULT_NAME) != config.DEFAULT_NAME:
                 continue
             x1, y1, x2, y2 = face.get("bbox", (0, 0, 0, 0))
             area = (x2 - x1) * (y2 - y1)
@@ -100,7 +119,7 @@ class Coordinator(BaseWorker):
 
     def _test_VLM(self):
         # comment return statement to test VLM funcitonality
-        if not VLM_ACTIVE or self.vlm_tested:
+        if not config.VLM_ACTIVE:
             return
         if time.time() - self.start_time > 5:
             self.vlm_tested = True
@@ -114,7 +133,7 @@ class Coordinator(BaseWorker):
             self.commands_queue.put_nowait(command)
 
     def _test_register_identity(self, event: list[dict]):
-        if not TEST_REGISTER_IDENTITY:
+        if not config.TEST_REGISTER_IDENTITY:
             return
         faces = event.get("faces", [])
 
@@ -167,7 +186,7 @@ class Coordinator(BaseWorker):
             if faces:
                 print(f"\n [Coordinator] Vision Event: detected {len(faces)} faces")
                 for face in faces:
-                    _name = face.get("name", DEFAULT_NAME)
+                    _name = face.get("name", config.DEFAULT_NAME)
                     _score = face.get("score", 0.0)
                     _bbox = face.get("bbox")
                     # print(f" - ID: {face['track_id']} | Name: {name} ({score:.2f}) | Loc: {bbox}")
