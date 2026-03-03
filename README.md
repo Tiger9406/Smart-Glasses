@@ -1,16 +1,26 @@
-# Smart Glasses
+# Smart Glasses Multimodel Backend
 
-Let's lock in
+Real-time, asycnh ML-based backend designed for smart glasses
 
 ---
 
-## Description: multiprocessing server
+## Architecture Overview
 
-This'll be the server to our smart glasses; we stream in raw data via websockets & process it how we want
-We ingest and then have parallel workers (visual & audio) preprocessing the incoming data; we use multiprocessing
-Then these parallel workers are to produce output events and send them in a queue for another worker: the coordinator, to take action on these events
-Exact action split we can discuss later, but I envision probably text-to-speech happens in audio workers and some smaller ml models on visual workers
-Later coordinator combine both to make more complex actions
+We leverage python's multiprocessing to prevent ML inference from blocking asynchronous network communication
+
+1. **Ingestion:** FastAPI WebSocket receives continuous byt streams of video and audio from client
+2. **Shared Memory:** Data pushed into thread-safe multiprocessing queues, in `shared_mem.py`
+3. **Parallel processing:** We have dedicated workers, each its own subprocess, pulling from the queues to run heavy inferences such as inspireface and MLX parakeet in parallel.
+4. **Coordination:** Central `coordinator.py` aggregating vision and audio workers' processed eventrs, manages overall server state, and decides commands/next action such as registering an identity or summarizing video frames.
+
+## Tech Stack
+
+- **Networking:** `FastAPI`, `WebSockets`
+- **Concurrency:** `multiprocessing`, `asyncio`
+- **Vision** `OpenCV`, `InspireFace`
+- **Audio:** MLX `Parakeet` via `ONNX`
+- **Context:** `GEMINI` API
+- **Database:** `SQLite` (FAISS & vector db to be explored)
 
 ## Setup
 
@@ -25,11 +35,8 @@ Awaiting further combinations of the two to create more complex logic for identi
 To run: 
 python main.py
 
-To run simulator with data, after running main run:
+Separate terminal, run:
 
 python -m api.simulator
 
 Data types & stream parameters defined in core/config.py
-
-TODO: implement worker logic & coordinator logics
-
