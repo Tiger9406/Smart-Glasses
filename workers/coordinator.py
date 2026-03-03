@@ -1,11 +1,17 @@
 import multiprocessing as mp
 import queue
 import time
+from collections import deque
 
 import inspireface as isf
 import numpy as np
 
-from core.config import SAMPLE_FACE_EMBEDDING_PATHS, TEST_REGISTER_IDENTITY, VLM_ACTIVE
+from core.config import (
+    DEFAULT_NAME,
+    SAMPLE_FACE_EMBEDDING_PATHS,
+    TEST_REGISTER_IDENTITY,
+    VLM_ACTIVE,
+)
 from workers.base import BaseWorker
 
 
@@ -23,6 +29,10 @@ class Coordinator(BaseWorker):
     def setup(self):
         self.start_time = time.time()
         self.request_number = 0
+
+        self.CACHE_DURATION = 10.0
+        self.vision_cache = deque()  # stores tuples of timestamp, face_list
+
         self.vlm_tested = False
         self.sample_embeddings = {}
         self.registered_tracks = set()
@@ -32,6 +42,44 @@ class Coordinator(BaseWorker):
                 for name, path in SAMPLE_FACE_EMBEDDING_PATHS.items()
             }
             self.registered_tracks = set()
+
+    def _update_vision_cache(self, faces):
+        """Add and remove old face cache"""
+        current_time = time.time()
+        self.vision_cache.append((current_time, faces))
+
+        while (
+            self.vision_cache
+            and (current_time - self.vision_cache[0][0]) > self.CACHE_DURATION
+        ):
+            self.vision_cache.popleft()
+
+    def _resolve_target_face(self, target_timestamp):
+        """Finds frame closest to target_timestamp and return largest unknown face"""
+        if not self.vision_cache:
+            return None
+
+        # finds closest metadata to said timestamp
+        closest_frame = min(
+            self.vision_cache, key=lambda x: abs(x[0] - target_timestamp)
+        )
+        _, faces = closest_frame
+
+        if not faces:
+            return None
+
+        max_area = 0
+        best_face = None
+        for face in faces:
+            if face.get("name", DEFAULT_NAME) != DEFAULT_NAME:
+                continue
+            x1, y1, x2, y2 = face.get("bbox", (0, 0, 0, 0))
+            area = (x2 - x1) * (y2 - y1)
+            if area > max_area:
+                max_area = area
+                best_face = face
+
+        return best_face
 
     def run(self):
         print("[Coordinator] Started")
@@ -125,6 +173,8 @@ class Coordinator(BaseWorker):
                     # print(f" - ID: {face['track_id']} | Name: {name} ({score:.2f}) | Loc: {bbox}")
 
             """
+            faces = event.get("faces", [])
+            self._update_vision_cache(faces)
             self._test_register_identity(event)
             pass
 
@@ -139,6 +189,9 @@ class Coordinator(BaseWorker):
             "name": Unkown,
             "embedding":
             """
+
+            #TODO: parse for intent and if it's register face, get timestamp and have logic there
+            
             print(f"[Coordinator] {event['name']}: {event['text']}")
 
         elif event_type == "vlm_result":
