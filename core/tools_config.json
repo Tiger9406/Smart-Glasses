@@ -1,0 +1,43 @@
+{
+  "systemInstruction": {
+    "parts": [
+      {
+        "text": "You are an intent parser. Extract commands from the user's speech. If no command is present, output standard text."
+      }
+    ]
+  },
+  "tools": [
+    {
+      "functionDeclarations": [
+        {
+          "name": "register_face",
+          "description": "Triggers when the user learns someone's name or is introduced to someone (e.g., 'Nice to meet you, John', 'This is Sarah').",
+          "parameters": {
+            "type": "OBJECT",
+            "properties": {
+              "name": {
+                "type": "STRING",
+                "description": "The name of the person being registered."
+              }
+            },
+            "required": ["name"]
+          }
+        },
+        {
+          "name": "save_memory",
+          "description": "Triggers when the user explicitly states a fact they want to remember (e.g., 'Remind me he is allergic to peanuts').",
+          "parameters": {
+            "type": "OBJECT",
+            "properties": {
+              "fact": {
+                "type": "STRING",
+                "description": "The specific detail or fact to remember."
+              }
+            },
+            "required": ["fact"]
+          }
+        }
+      ]
+    }
+  ]
+}

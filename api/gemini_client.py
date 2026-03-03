@@ -1,16 +1,18 @@
 import base64
-
+import json
 import aiohttp
 
-from core.config import MAXOUTPUTTOKENS, TEMPERATURE
+from core.config import MAXOUTPUTTOKENS, TEMPERATURE, TOOLS_JSON_PATH
 
 
 class GeminiClient:
-    def __init__(self, api_key: str, url: str, timeout_seconds=20):
+    def __init__(self, api_key: str, url: str, config_path = TOOLS_JSON_PATH, timeout_seconds=20):
         self.api_key = api_key
         self.url = url
         self.timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._session = None
+        with open(config_path, "r") as f:
+            self.tools_config = json.load(f)
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -55,9 +57,35 @@ class GeminiClient:
                 "x-goog-api-key": self.api_key,
             },
         ) as response:
-            return await self._handle_response(response)
+            return await self._handle_response(response, "VLM")
 
-    async def _handle_response(self, response):
+    async def parse_intent(self, prompt: str) -> str:
+
+        if not self.api_key:
+            raise ValueError("API Key not configured")
+
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "systemInstruction": self.tools_config.get("systemInstruction"),
+            "tools": self.tools_config.get("tools"),
+            "generationConfig": {
+                "temperature": 0.1, 
+            }
+        }
+
+        session = await self._get_session()
+
+        async with session.post(
+            self.url,
+            json=payload,
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": self.api_key,
+            },
+        ) as response:
+            return await self._handle_response(response, "INTENT")
+        
+    async def _handle_response(self, response, response_type : str):
         if response.status != 200:
             text = await response.text()
             raise RuntimeError(f"API Error {response.status}: {text}")
@@ -80,11 +108,29 @@ class GeminiClient:
             raise ValueError(
                 f"Generation stopped due to: {finish_reason}. Safety Ratings: {safety_ratings}"
             )
+        
 
-        try:  # get text
-            return candidate["content"]["parts"][0]["text"]
-        except (KeyError, IndexError):
-            # Fallback if structure is valid but content is unexpectedly missing
-            raise ValueError(
-                f"Valid finishReason but missing text content. Response: {result}"
-            )
+        if response_type == "VLM":
+            try:  # get text
+                text = candidate["content"]["parts"][0]["text"]
+                return text
+            except (KeyError, IndexError):
+                # Fallback if structure is valid but content is unexpectedly missing
+                raise ValueError(
+                    f"Valid finishReason but missing text content. Response: {result}"
+                )
+        elif response_type == "INTENT":
+            try:
+                part = candidate.get("content", {}).get("parts", [])[0]
+                if "functionCall" in part:
+                    func_call = part["functionCall"]
+                    return {
+                        "cmd": func_call["name"].upper(), 
+                        "args": func_call.get("args", {})
+                    }
+                return None
+            except (KeyError, IndexError):
+                # Fallback if structure is valid but content is unexpectedly missing
+                raise ValueError(
+                    f"Valid finishReason but missing text content. Response: {result}"
+                )
