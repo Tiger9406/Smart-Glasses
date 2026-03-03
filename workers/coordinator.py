@@ -184,14 +184,15 @@ class Coordinator(BaseWorker):
             "type": "speech",
             "text": text,    (would be the audio transcription)
             "id": session_id,
+            "speech_start_time" : time.time()
             "timestamp": time.time(),
             "final": False,
             "name": Unkown,
             "embedding":
             """
 
-            #TODO: parse for intent and if it's register face, get timestamp and have logic there
-            
+            # TODO: parse for intent and if it's register face, get timestamp and have logic there
+
             print(f"[Coordinator] {event['name']}: {event['text']}")
 
         elif event_type == "vlm_result":
