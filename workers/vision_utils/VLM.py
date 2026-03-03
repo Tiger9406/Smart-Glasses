@@ -14,7 +14,10 @@ class VLMClient:
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession(timeout=self.timeout)
+            connector = aiohttp.TCPConnector(ssl=False)
+            self._session = aiohttp.ClientSession(
+                timeout=self.timeout, connector=connector
+            )
         return self._session
 
     async def close(self):
@@ -85,6 +88,8 @@ class VLMClient:
             return candidate["content"]["parts"][0]["text"]
         except (KeyError, IndexError):
             # Fallback if structure is valid but content is unexpectedly missing
+            # doesnt need to be raised value error cus if its a empty string then there is no text so its fine
+            return ""
             raise ValueError(
                 f"Valid finishReason but missing text content. Response: {result}"
             )
@@ -103,8 +108,12 @@ class VLMClient:
 
         Latest speech from {name}: "{speech_text}"
 
-        Extract any NEW, concrete information worth remembering (preferences, names, intentions).
-        Be short and consice."""
+        Extract any NEW, concrete information worth remembering (preferences, names, intentions). 
+        Make sure the information is useful.
+        If it contains information about someone else only store it if you have their name.
+        Be short and concise. 
+        
+        IF NO NEW INFORMATION RETURN AN EMPTY STRING."""
 
         parts = [{"text": prompt}]
 

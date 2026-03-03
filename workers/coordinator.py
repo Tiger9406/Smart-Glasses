@@ -5,10 +5,13 @@ import asyncio
 import json
 import multiprocessing as mp
 import queue
+import threading
 import time
 
+from core import config
 from core.config import VLM_ACTIVE
 from workers.base import BaseWorker
+from workers.vision_utils.VLM import VLMClient
 
 
 class Coordinator(BaseWorker):
@@ -21,10 +24,30 @@ class Coordinator(BaseWorker):
 
         # maybe more; hold past actions taken by self maybe? or a state, like what's happening in the world rn?
         # again, decision making module given the initial processing by the workers
+        with open("workers/coordinator_utils/ContextDict.json") as f:
+            self.memory_db = json.load(f)
 
     def setup(self):
         self.start_time = time.time()
         self.request_number = 0
+
+        self.vlm_client = VLMClient(
+            api_key=config.GEMINI_API_KEY, url=config.GEMINI_API_LINK
+        )
+
+        self.loop = asyncio.new_event_loop()
+        self.async_thread = threading.Thread(  # assigns loop to thread
+            target=self._start_background_loop, daemon=True
+        )
+        self.async_thread.start()
+
+    def _start_background_loop(self):
+        """
+        spins a separate thread, keeps an event loop open
+        so we can reuse the VLMClient session across multiple requests.
+        """
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_forever()  # blocking; awaits something thrown at self.loop
 
     def run(self):
         print("[Coordinator] Started")
@@ -57,21 +80,21 @@ class Coordinator(BaseWorker):
             print("[Coordinator] Put command in vision queue")
             self.commands_queue.put_nowait(command)
 
-        async def _handle_gemini(self, prompt, request_id: int):  # handling api request
-            try:
-                name, new_facts = await self.vlm_client.analyze_memory(prompt)
+    async def _handle_gemini(self, prompt, request_id: int):  # handling api request
+        try:
+            name, new_facts = await self.vlm_client.analyze_memory(prompt)
 
-                if new_facts:
-                    self.output_queue.put(
-                        {"type": "llm_result", "name": name, "new_facts": new_facts}
-                    )
-                    print(
-                        f"[LLM Worker] Sent {len(new_facts)} new facts for {name} to Coordinator."
-                    )
-                else:
-                    print(f"[LLM Worker] No new facts found for {name}.")
-            except Exception as e:
-                print(f"[Coordinator] LLM task error: {e}")
+            if new_facts:
+                self.results_queue.put(
+                    {"type": "llm_result", "name": name, "new_facts": new_facts}
+                )
+                print(
+                    f"[LLM Worker] Sent {len(new_facts)} new facts for {name} to Coordinator."
+                )
+            else:
+                print(f"[LLM Worker] No new facts found for {name}.")
+        except Exception as e:
+            print(f"[Coordinator] LLM task error: {e}")
 
     def _handle_event(self, event):
         # handling events; gotta coordinate event data format
@@ -122,22 +145,30 @@ class Coordinator(BaseWorker):
                     "name": name,
                     "speech_text": speech_text,
                     "facts_string": facts_string,
-                    "request_id": event.get(id, -1),
+                    "request_id": event.get("id", -1),
                 }
 
                 asyncio.run_coroutine_threadsafe(
-                    self._handle_gemini(payload),
+                    self._handle_gemini(payload, event.get("id", -1)),
                     self.loop,
                 )
 
         elif event_type == "llm_result":
             name = event.get("name", "Unknown")
-            new_facts = event.get("new_facts", [])
+            new_facts_str = event.get("new_facts", "").strip()
 
-            if new_facts:
+            if new_facts_str:
                 # update the DB
                 current_facts = self.memory_db.get(name, [])
-                self.memory_db[name] = current_facts + new_facts
+
+                fact_lines = new_facts_str.split("\n")
+
+                for line in fact_lines:
+                    # Strip out whitespace, dashes, and asterisks from the start/end
+                    clean_line = line.strip(" -*")
+
+                    if clean_line:  # Make sure it's not an empty line
+                        self.memory_db[name].append(clean_line)
 
                 # save to disk safely, maybe do this on coord shutdown but its prob good to keep updating the mem
                 # could dispatch the saving every x seconds or something also
@@ -145,7 +176,7 @@ class Coordinator(BaseWorker):
                     with open("workers/coordinator_utils/ContextDict.json", "w") as f:
                         json.dump(self.memory_db, f, indent=2)
                     print(
-                        f"[Coordinator] Successfully saved memory for {name}: {new_facts}"
+                        f"[Coordinator] Successfully saved memory for {name}: {new_facts_str}"
                     )
                 except Exception as e:
                     print(f"[Coordinator] Error writing to ContextDict.json: {e}")
