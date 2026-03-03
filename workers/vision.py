@@ -12,7 +12,7 @@ import numpy as np
 from core import config
 from workers.base import IngestionWorker
 from workers.vision_utils.inspireface_processor import InspireFaceProcessor
-from workers.vision_utils.VLM import VLMClient
+from api.gemini_client import VLMClient
 
 
 class VisionWorker(IngestionWorker):
