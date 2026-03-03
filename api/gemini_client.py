@@ -5,7 +5,7 @@ import aiohttp
 from core.config import MAXOUTPUTTOKENS, TEMPERATURE
 
 
-class VLMClient:
+class GeminiClient:
     def __init__(self, api_key: str, url: str, timeout_seconds=20):
         self.api_key = api_key
         self.url = url
