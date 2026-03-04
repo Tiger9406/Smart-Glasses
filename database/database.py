@@ -46,7 +46,7 @@ class DatabaseManager:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL
+                    name TEXT NOT NULL UNIQUE
                 )
             """)
 
@@ -104,14 +104,12 @@ class DatabaseManager:
         """Return user id if exist; otherwise create"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id FROM users WHERE name = ?", (name,))
-            row = cursor.fetchone()
-            if row:
-                return row[0]
 
-            cursor.execute("INSERT INTO users (name) VALUES (?)", (name,))
+            cursor.execute("INSERT OR IGNORE INTO users (name) VALUES (?)", (name,))
             conn.commit()
-            return cursor.lastrowid
+
+            cursor.execute("SELECT id FROM users WHERE name = ?", (name,))
+            return cursor.fetchone()[0]
 
     def save_face_embedding(self, name: str, embedding: np.ndarray):
         """Save new face embedding"""
