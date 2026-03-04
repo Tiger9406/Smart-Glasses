@@ -30,7 +30,9 @@ class DatabaseManager:
         self._init_db()
 
     def _get_connection(self):
-        return sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+        conn = sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+        conn.execute("PRAGMA foreign_keys = ON;")
+        return conn
 
     def _init_db(self):
         """Create schema & table if doesn't exist"""
@@ -52,7 +54,7 @@ class DatabaseManager:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
                     embedding ARRAY NOT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users (id)
+                    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
                 )
             """)
 
@@ -62,7 +64,7 @@ class DatabaseManager:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
                     embedding ARRAY NOT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users (id)
+                    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
                 )
             """)
 
@@ -73,10 +75,17 @@ class DatabaseManager:
                     user_id INTEGER NOT NULL,
                     transcript TEXT NOT NULL,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users (id)
+                    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
                 )
             """)
 
+            conn.commit()
+
+    def delete_user(self, name: str):
+        """deleting user"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM users WHERE name = ?", (name,))
             conn.commit()
 
     def _get_or_create_user(self, name: str) -> int:
