@@ -8,15 +8,13 @@ import queue
 import threading
 import time
 
-from core import config
-from core.config import VLM_ACTIVE
-from workers.base import BaseWorker
-from workers.vision_utils.Gemini import GeminiClient
 import inspireface as isf
 import numpy as np
 
+from core import config
 from core.config import SAMPLE_FACE_EMBEDDING_PATHS, TEST_REGISTER_IDENTITY, VLM_ACTIVE
 from workers.base import BaseWorker
+from workers.vision_utils.Gemini import GeminiClient
 
 
 class Coordinator(BaseWorker):
@@ -103,13 +101,12 @@ class Coordinator(BaseWorker):
                 self.results_queue.put(
                     {"type": "llm_result", "name": name, "new_facts": new_facts}
                 )
-                print(
-                    f"[LLM Worker] Sent {len(new_facts)} new facts for {name} to Coordinator."
-                )
+                print(f"[LLM Worker] Sent new fact for {name} to Coordinator.")
             else:
                 print(f"[LLM Worker] No new facts found for {name}.")
         except Exception as e:
             print(f"[Coordinator] LLM task error: {e}")
+
     def _test_register_identity(self, event: list[dict]):
         if not TEST_REGISTER_IDENTITY:
             return
