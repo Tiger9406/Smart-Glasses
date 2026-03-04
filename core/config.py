@@ -68,3 +68,5 @@ LOUDNESS_THRESHOLD = 0.01  # how quiet it needs to be to signify stop talking, c
 
 # voice diartization
 SIMILARITY_THRESHOLD = 0.55
+
+IDENTITY_DB_PATH = "./database/identities.db"

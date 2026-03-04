@@ -1,4 +1,3 @@
-import json
 import queue
 import time
 import uuid
@@ -9,6 +8,7 @@ import onnxruntime as ort
 from parakeet_mlx import from_pretrained
 
 from core import config
+from database.database import DatabaseManager
 from workers.base import IngestionWorker
 
 
@@ -29,15 +29,16 @@ class AudioWorker(IngestionWorker):
         self.chunk_bytes = self.chunk_samples * 2
         self.similarity_threshold = config.SIMILARITY_THRESHOLD
 
-        # load embeddings in from json so we can manually add em n stuff
-        with open("workers/audio_utils/EmbeddingDict.json") as f:
-            speaker_paths = json.load(f)
+        self.db = DatabaseManager()
+        speaker_embeddings = self.db.get_all_voices()
 
         # average their embeddings in indentify_speaker
         self.known_speakers = {
-            name: np.mean([np.load(p) for p in paths], axis=0)
-            for name, paths in speaker_paths.items()
+            name: np.mean(embeddings, axis=0)
+            for name, embeddings in speaker_embeddings.items()
         }
+
+        print(f"[Audio] Loaded {len(self.known_speakers)} voice identities from database")
 
         print(
             f"[AudioWorker] Ready. Chunk: {self.chunk_ms}ms ({self.chunk_bytes} bytes)"
