@@ -11,7 +11,7 @@ import time
 from core import config
 from core.config import VLM_ACTIVE
 from workers.base import BaseWorker
-from workers.vision_utils.VLM import VLMClient
+from workers.vision_utils.Gemini import GeminiClient
 
 
 class Coordinator(BaseWorker):
@@ -31,7 +31,7 @@ class Coordinator(BaseWorker):
         self.start_time = time.time()
         self.request_number = 0
 
-        self.vlm_client = VLMClient(
+        self.gemini_client = GeminiClient(
             api_key=config.GEMINI_API_KEY, url=config.GEMINI_API_LINK
         )
 
@@ -44,7 +44,7 @@ class Coordinator(BaseWorker):
     def _start_background_loop(self):
         """
         spins a separate thread, keeps an event loop open
-        so we can reuse the VLMClient session across multiple requests.
+        so we can reuse the GeminiClient session across multiple requests.
         """
         asyncio.set_event_loop(self.loop)
         self.loop.run_forever()  # blocking; awaits something thrown at self.loop
@@ -82,7 +82,7 @@ class Coordinator(BaseWorker):
 
     async def _handle_gemini(self, prompt, request_id: int):  # handling api request
         try:
-            name, new_facts = await self.vlm_client.analyze_memory(prompt)
+            name, new_facts = await self.gemini_client.analyze_memory(prompt)
 
             if new_facts:
                 self.results_queue.put(

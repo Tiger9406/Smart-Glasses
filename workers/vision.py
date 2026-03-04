@@ -11,8 +11,8 @@ import numpy as np
 
 from core import config
 from workers.base import IngestionWorker
+from workers.vision_utils.Gemini import GeminiClient
 from workers.vision_utils.inspireface_processor import InspireFaceProcessor
-from workers.vision_utils.VLM import VLMClient
 
 
 class VisionWorker(IngestionWorker):
@@ -37,13 +37,13 @@ class VisionWorker(IngestionWorker):
 
         self.buffer_len = int(config.FPS * config.BUFFER_DURATION)
         self.frame_buffer = deque(maxlen=self.buffer_len)
-        self.vlm_client = VLMClient(
+        self.vlm_client = GeminiClient(
             api_key=config.GEMINI_API_KEY, url=config.GEMINI_API_LINK
         )
 
         # async thread for continual loop for vlm
         self.loop = asyncio.new_event_loop()
-        self.async_thread = threading.Thread( #assigns loop to thread
+        self.async_thread = threading.Thread(  # assigns loop to thread
             target=self._start_background_loop, daemon=True
         )
         self.async_thread.start()
@@ -53,10 +53,10 @@ class VisionWorker(IngestionWorker):
     def _start_background_loop(self):
         """
         spins a separate thread, keeps an event loop open
-        so we can reuse the VLMClient session across multiple requests.
+        so we can reuse the GeminiClient session across multiple requests.
         """
         asyncio.set_event_loop(self.loop)
-        self.loop.run_forever() # blocking; awaits something thrown at self.loop
+        self.loop.run_forever()  # blocking; awaits something thrown at self.loop
 
     def run(self):
         # for now some basic logic about facial recognition; avoids re-recognizing too often
