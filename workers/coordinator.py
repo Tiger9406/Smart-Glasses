@@ -1,13 +1,11 @@
-# coordinator: looks at global queue and processes output from sub workers vision and audio
-# kinda like the decision making part
-
 import multiprocessing as mp
 import queue
 import time
+
 import inspireface as isf
 import numpy as np
 
-from core.config import TEST_REGISTER_IDENTITY, VLM_ACTIVE, SAMPLE_FACE_EMBEDDING_PATHS
+from core.config import SAMPLE_FACE_EMBEDDING_PATHS, TEST_REGISTER_IDENTITY, VLM_ACTIVE
 from workers.base import BaseWorker
 
 
@@ -25,6 +23,15 @@ class Coordinator(BaseWorker):
     def setup(self):
         self.start_time = time.time()
         self.request_number = 0
+        self.vlm_tested = False
+        self.sample_embeddings = {}
+        self.registered_tracks = set()
+        if TEST_REGISTER_IDENTITY and SAMPLE_FACE_EMBEDDING_PATHS:
+            self.sample_embeddings = {
+                name: np.load(path)
+                for name, path in SAMPLE_FACE_EMBEDDING_PATHS.items()
+            }
+            self.registered_tracks = set()
 
     def run(self):
         print("[Coordinator] Started")
@@ -45,9 +52,10 @@ class Coordinator(BaseWorker):
 
     def _test_VLM(self):
         # comment return statement to test VLM funcitonality
-        if not VLM_ACTIVE:
+        if not VLM_ACTIVE or self.vlm_tested:
             return
-        if time.time() - self.start_time > 5 and self.request_number == 0:
+        if time.time() - self.start_time > 5:
+            self.vlm_tested = True
             command = {
                 "cmd": "GET_VIDEO_CONTEXT",
                 "prompt": "Summarize the video in a sentence",
@@ -61,23 +69,33 @@ class Coordinator(BaseWorker):
         if not TEST_REGISTER_IDENTITY:
             return
         faces = event.get("faces", [])
-        for name, emb_path in SAMPLE_FACE_EMBEDDING_PATHS.items():
-            emb = np.load(emb_path)
-            for face in faces:
-                new_emb = face.get('emb', None)
-                if new_emb is None:
-                    continue
+
+        for face in faces:
+            new_emb = face.get("emb", None)
+            track_id = face.get("track_id")
+
+            # skip if no embedding or we already registered
+            if new_emb is None or track_id in self.registered_tracks:
+                continue
+
+            for name, emb in self.sample_embeddings.items():
                 score = isf.feature_comparison(emb, new_emb)
                 if score > 0.5:
                     command = {
                         "cmd": "REGISTER_FACE",
-                        "track_id": face.get("track_id"), 
-                        "name": name, 
-                        "emb": new_emb
+                        "track_id": track_id,
+                        "name": name,
+                        "emb": new_emb,
                     }
-                    self.request_number+=1
-                    print(f"[Coordinator] Put command to register {name} in vision queue")
+                    self.request_number += 1
                     self.commands_queue.put_nowait(command)
+
+                    # Mark as registered so we don't spam the queue
+                    self.registered_tracks.add(track_id)
+                    print(
+                        f"[Coordinator] Put command to register {name} (Track {track_id}) in vision queue"
+                    )
+                    break
 
     def _handle_event(self, event):
         # handling events; gotta coordinate event data format
