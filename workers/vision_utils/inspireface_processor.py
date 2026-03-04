@@ -54,7 +54,9 @@ class InspireFaceProcessor:
             enable_face_attribute=False,  # age & gender & whatnot
             enable_liveness=False,  # interesting parameter: to differentiate a physical picture of someone vs real person
         )
-        self.session = isf.InspireFaceSession(params)
+        self.session = isf.InspireFaceSession(
+            params, detect_mode=isf.HF_DETECT_MODE_TRACK_BY_DETECTION
+        )
         self.session.set_detection_confidence_threshold(confidence_threshold)
         print("[Vision] InspireFace Model initialized")
 
@@ -63,11 +65,13 @@ class InspireFaceProcessor:
             print(f"[Vision][Identity] Failed to register '{name}': embedding is None")
             return
         if not isinstance(embedding, np.ndarray):
-            print(f"[Vision][Identity] Failed to register '{name}': embedding is is not np array")
+            print(
+                f"[Vision][Identity] Failed to register '{name}': embedding is is not np array"
+            )
             return
         if name not in self.known_faces:
             self.known_faces[name] = []
-        
+
         self.known_faces[name].append(embedding)
         self.db.save_face_embedding(name, embedding)
         print(f"[Vision] Saved new face embedding for '{name}' to database.")
@@ -88,7 +92,9 @@ class InspireFaceProcessor:
             best_comp = max(best_comp, score)
         return best_comp
 
-    def identify_embedding(self, embedding: np.ndarray, threshold=config.CONFIDENCE_THRESHOLD_MATCHING):
+    def identify_embedding(
+        self, embedding: np.ndarray, threshold=config.CONFIDENCE_THRESHOLD_MATCHING
+    ):
         # given embedding, compare to known faces and return best match name and according score
         best_score = 0.0
         best_match = config.DEFAULT_NAME

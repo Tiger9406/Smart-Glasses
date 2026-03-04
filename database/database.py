@@ -192,3 +192,9 @@ class DatabaseManager:
 
             # return list of tuples: [("transcript stuff"), timestamp]
             return cursor.fetchall()
+
+    def clear_db(self):
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM users")
+            conn.commit()
