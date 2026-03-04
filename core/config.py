@@ -34,6 +34,20 @@ def get_model_path(model_type):
     return PIKACHU_MODEL_PATH
 
 
+TEST_REGISTER_IDENTITY = False
+START_WITH_SAMPLE_DATA = True
+SAMPLE_FACE_EMBEDDING_PATHS = {
+    "Joey": "database/sample_data/face_joey_tribbiani.npy",
+    "Rachel": "database/sample_data/face_rachel_greene.npy",
+    "Ross": "database/sample_data/face_ross_geller.npy",
+}
+SAMPLE_VOICE_EMBEDDING_PATHS = {
+    "Shaun": ["database/sample_data/voice_Shaun1.npy"],
+    "Matt": ["database/sample_data/voice_Matt1.npy"],
+    "Tiger": ["database/sample_data/voice_Tiger1.npy"],
+}
+SAVE_ANNOTATED_VID = False
+
 BUFFER_DURATION = 5
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_API_LINK = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
@@ -68,3 +82,5 @@ LOUDNESS_THRESHOLD = 0.01  # how quiet it needs to be to signify stop talking, c
 
 # voice diartization
 SIMILARITY_THRESHOLD = 0.55
+
+IDENTITY_DB_PATH = "./database/identities.db"

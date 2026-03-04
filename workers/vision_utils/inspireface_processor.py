@@ -3,6 +3,7 @@ import numpy as np
 from inspireface import FaceInformation
 
 from core import config
+from database.database import DatabaseManager
 
 
 class InspireFaceProcessor:
@@ -17,7 +18,9 @@ class InspireFaceProcessor:
             model_path = config.get_model_path(model_type)
 
         self.session = None
-        self.known_faces = {}  # map for now; we can remove this and make it a db later if known faces is to grow larger
+        self.db = DatabaseManager()
+        self.known_faces = self.db.get_all_faces()
+        print(f"[Vision] loaded {len(self.known_faces)} identities from database")
 
         self._initialize_model(
             model_type, model_path, confidence_threshold, download_model
@@ -51,7 +54,9 @@ class InspireFaceProcessor:
             enable_face_attribute=False,  # age & gender & whatnot
             enable_liveness=False,  # interesting parameter: to differentiate a physical picture of someone vs real person
         )
-        self.session = isf.InspireFaceSession(params)
+        self.session = isf.InspireFaceSession(
+            params, detect_mode=isf.HF_DETECT_MODE_TRACK_BY_DETECTION
+        )
         self.session.set_detection_confidence_threshold(confidence_threshold)
         print("[Vision] InspireFace Model initialized")
 
@@ -60,11 +65,16 @@ class InspireFaceProcessor:
             print(f"[Vision][Identity] Failed to register '{name}': embedding is None")
             return
         if not isinstance(embedding, np.ndarray):
-            print(f"[Vision][Identity] Failed to register '{name}': embedding is is not np array")
+            print(
+                f"[Vision][Identity] Failed to register '{name}': embedding is is not np array"
+            )
             return
         if name not in self.known_faces:
             self.known_faces[name] = []
+
         self.known_faces[name].append(embedding)
+        self.db.save_face_embedding(name, embedding)
+        print(f"[Vision] Saved new face embedding for '{name}' to database.")
 
     def detect_faces(self, image: np.ndarray):
         return self.session.face_detection(image)
@@ -82,7 +92,9 @@ class InspireFaceProcessor:
             best_comp = max(best_comp, score)
         return best_comp
 
-    def identify_embedding(self, embedding: np.ndarray, threshold=config.CONFIDENCE_THRESHOLD_MATCHING):
+    def identify_embedding(
+        self, embedding: np.ndarray, threshold=config.CONFIDENCE_THRESHOLD_MATCHING
+    ):
         # given embedding, compare to known faces and return best match name and according score
         best_score = 0.0
         best_match = config.DEFAULT_NAME

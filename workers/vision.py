@@ -79,8 +79,9 @@ class VisionWorker(IngestionWorker):
                     continue
 
                 # for testing purposes: if we wanna see bounding box behavior
-                # if self.video_writer is None:
-                #     self._init_video_writer(frame)
+                if config.SAVE_ANNOTATED_VID and self.video_writer is None:
+                    self._init_video_writer(frame)
+
                 self._facial_loop(frame)
 
         finally:
@@ -219,6 +220,24 @@ class VisionWorker(IngestionWorker):
                         )
                     else:
                         print("[Vision] Can't analyze context because buffer empty")
+                elif command.get("cmd") == "REGISTER_FACE":
+                    # Expected payload: {"cmd": "REGISTER_FACE", "track_id": number, "name": "whatever name", "embedding": np.ndarray}
+                    track_id = command.get("track_id")
+                    name = command.get("name")
+                    emb = command.get("emb")
+                    if track_id is not None and name and emb is not None:
+                        self.processor.register_identity(name, emb)
+                        print(f"[Vision] Registered '{name}' using provided embedding.")
+
+                        if track_id in self.active_identities:
+                            self.active_identities[track_id].update(
+                                {
+                                    "name": name,
+                                    "score": 1.0,
+                                    "checked_ts": time.time(),
+                                }
+                            )
+
                 else:  # handle other types of commands; maybe register face
                     pass
             except Exception as e:
