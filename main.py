@@ -42,6 +42,10 @@ async def lifespan(app: FastAPI):
 
     yield  # app running after this
 
+    if config.START_WITH_SAMPLE_DATA:
+        print("[System] Clearing Sample Data")
+        db.clear_db()
+
     print("[System] Shutting down workers")
     workers = [audio_worker, vision_worker, brain]
     for w in workers:
