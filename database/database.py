@@ -2,8 +2,9 @@ import io
 import os
 import sqlite3
 
-from core.config import IDENTITY_DB_PATH
 import numpy as np
+
+from core.config import IDENTITY_DB_PATH
 
 
 def adapt_array(arr: np.ndarray):
@@ -32,6 +33,7 @@ class DatabaseManager:
     def _get_connection(self):
         conn = sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES)
         conn.execute("PRAGMA foreign_keys = ON;")
+        conn.execute("PRAGMA journal_mode = WAL;")
         return conn
 
     def _init_db(self):
@@ -78,6 +80,16 @@ class DatabaseManager:
                     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
                 )
             """)
+
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS id_face_user_id ON face_embeddings(user_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS id_voice_user_id ON voice_embeddings(user_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS id_chat_user_id ON chat_history(user_id)"
+            )
 
             conn.commit()
 
@@ -154,30 +166,31 @@ class DatabaseManager:
                     voices_dict[name] = []
                 voices_dict[name].append(emb)
         return voices_dict
-    
+
     def save_chat_history(self, name: str, transcript: str):
         user_id = self._get_or_create_user(name)
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "INSERT INTO chat_history (user_id, transcript) VALUES (?, ?)",
-                (user_id, transcript)
+                (user_id, transcript),
             )
             conn.commit()
 
     def get_chat_history(self, name: str, limit: int = 10) -> list:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT transcript, timestamp 
                 FROM chat_history h
                 JOIN users u ON h.user_id = u.id
                 WHERE u.name = ?
                 ORDER BY h.id DESC
                 LIMIT ?
-            """, (name, limit))
-            
+            """,
+                (name, limit),
+            )
+
             # return list of tuples: [("transcript stuff"), timestamp]
             return cursor.fetchall()
-        
-    
