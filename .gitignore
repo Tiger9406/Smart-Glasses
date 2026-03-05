@@ -12,5 +12,3 @@ api/annotated_video.mp4
 *.db
 *.db-shm
 *.db-wal
-
-/tests/*
