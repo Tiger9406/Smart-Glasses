@@ -1,10 +1,8 @@
 # coordinator: looks at global queue and processes output from sub workers vision and audio
 # kinda like the decision making part
 
-import asyncio
 import multiprocessing as mp
 import queue
-import threading
 import time
 from collections import deque
 
@@ -41,20 +39,6 @@ class Coordinator(BaseWorker):
             self.registered_tracks = set()
 
         self.gemini_client = GeminiClient()
-
-        # async thread for continual loop for vlm
-        self.loop = asyncio.new_event_loop()
-        self.async_thread = threading.Thread(  # assigns loop to thread
-            target=self._start_background_loop, daemon=True
-        )
-        self.async_thread.start()
-
-    def _start_background_loop(self):
-        """
-        spins a separate thread, keeps an event loop open
-        """
-        asyncio.set_event_loop(self.loop)
-        self.loop.run_forever()  # blocking; awaits something thrown at self.loop
 
     def _update_vision_cache(self, faces):
         """Add and remove old face cache"""
