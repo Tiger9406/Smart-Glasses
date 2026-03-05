@@ -3,19 +3,24 @@ import json
 
 import aiohttp
 
-from core.config import MAXOUTPUTTOKENS, TEMPERATURE, TOOLS_JSON_PATH
+from core import config
 
 
 class GeminiClient:
-    def __init__(
-        self, api_key: str, url: str, config_path=TOOLS_JSON_PATH, timeout_seconds=20
-    ):
-        self.api_key = api_key
-        self.url = url
+    def __init__(self, timeout_seconds=20):
+        self.api_key = config.GEMINI_API_KEY
+        self.url = config.GEMINI_API_LINK
+        self.max_output_tokens = config.MAXOUTPUTTOKENS
+        self.temperature = config.TEMPERATURE
+
+        self.user_name = config.USER_NAME
+
         self.timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._session = None
-        with open(config_path, "r") as f:
+        with open(config.TOOLS_JSON_PATH, "r") as f:
             self.tools_config = json.load(f)
+        with open(config.PROMPT_JSON_PATH, "r") as f:
+            self.prompt_config = json.load(f)
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -48,8 +53,8 @@ class GeminiClient:
         payload = {
             "contents": [{"parts": parts}],
             "generationConfig": {
-                "temperature": TEMPERATURE,
-                "maxOutputTokens": MAXOUTPUTTOKENS,
+                "temperature": self.temperature,
+                "maxOutputTokens": self.max_output_tokens,
             },
         }
 
@@ -65,6 +70,36 @@ class GeminiClient:
         ) as response:
             return await self._handle_response(response, "VLM")
 
+    async def analyze_memory(self, conversation_history: str):
+        if not self.api_key:
+            raise ValueError("API Key not configured")
+
+        prompt_template = self.prompt_config.get("memory_prompt_template", "")
+        prompt = prompt_template.format(conversation_history=conversation_history)
+
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": self.temperature,
+                "maxOutputTokens": self.max_output_tokens,
+                "responseMimeType": "application/json",
+            },
+        }
+
+        session = await self._get_session()
+
+        async with session.post(
+            self.url,
+            json=payload,
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": self.api_key,
+            },
+        ) as response:
+            extracted_data = await self._handle_response(response, "MEMORY_JSON")
+
+        return extracted_data
+
     async def parse_intent(self, prompt: str) -> str:
 
         if not self.api_key:
@@ -75,7 +110,8 @@ class GeminiClient:
             "systemInstruction": self.tools_config.get("systemInstruction"),
             "tools": self.tools_config.get("tools"),
             "generationConfig": {
-                "temperature": 0.1,
+                "maxOutputTokens": self.max_output_tokens,
+                "temperature": self.temperature,
             },
         }
 
@@ -120,10 +156,24 @@ class GeminiClient:
                 text = candidate["content"]["parts"][0]["text"]
                 return text
             except (KeyError, IndexError):
-                # Fallback if structure is valid but content is unexpectedly missing
+                if finish_reason == "STOP":
+                    return ""
                 raise ValueError(
                     f"Valid finishReason but missing text content. Response: {result}"
                 )
+        elif response_type == "MEMORY_JSON":
+            try:
+                text = candidate["content"]["parts"][0]["text"]
+                return json.loads(text.strip())
+            except (KeyError, IndexError):
+                if finish_reason == "STOP":
+                    return []  # empty list if it stopped normally but found nothing
+                raise ValueError(
+                    f"Valid finishReason but missing text content. Response: {result}"
+                )
+            except json.JSONDecodeError:
+                print(f"Failed to parse JSON memory: {text}")
+                return []
         elif response_type == "INTENT":
             try:
                 part = candidate.get("content", {}).get("parts", [])[0]
@@ -133,9 +183,11 @@ class GeminiClient:
                         "cmd": func_call["name"].upper(),
                         "args": func_call.get("args", {}),
                     }
+                elif "text" in part:
+                    return {"cmd": "CHAT", "args": {"message": part["text"]}}
                 return None
             except (KeyError, IndexError):
-                # Fallback if structure is valid but content is unexpectedly missing
+                # error here; if no output sohuld be none
                 raise ValueError(
                     f"Valid finishReason but missing text content. Response: {result}"
                 )
