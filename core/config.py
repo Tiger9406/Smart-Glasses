@@ -54,7 +54,8 @@ GEMINI_API_LINK = "https://generativelanguage.googleapis.com/v1beta/models/gemin
 TEMPERATURE = 0.4
 MAXOUTPUTTOKENS = 1000
 VLM_ACTIVE = False
-TOOLS_JSON_PATH = "core/tools_config.json"
+TOOLS_JSON_PATH = "core/config_tools.json"
+PROMPT_JSON_PATH = "core/config_prompts.json"
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
