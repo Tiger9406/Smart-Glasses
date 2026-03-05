@@ -10,5 +10,7 @@ __pycache__/
 api/annotated_video.mp4
 
 *.db
+*.db-shm
+*.db-wal
 
-/database/test_database.py
+/tests/*
