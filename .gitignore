@@ -7,7 +7,7 @@ __pycache__/
 
 *.mov
 /api/video_converter.py
-api/annotated_video.mp4
+/api/simulator_resources/annotated_video.mp4
 
 *.db
 *.db-shm
