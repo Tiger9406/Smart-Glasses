@@ -159,8 +159,6 @@ class GeminiClient:
                 text = candidate["content"]["parts"][0]["text"]
                 return text
             except (KeyError, IndexError):
-                if finish_reason == "STOP":
-                    return ""
                 raise ValueError(
                     f"Valid finishReason but missing text content. Response: {result}"
                 )
@@ -169,8 +167,6 @@ class GeminiClient:
                 text = candidate["content"]["parts"][0]["text"]
                 return json.loads(text.strip())
             except (KeyError, IndexError):
-                if finish_reason == "STOP":
-                    return []  # empty list if it stopped normally but found nothing
                 raise ValueError(
                     f"Valid finishReason but missing text content. Response: {result}"
                 )
