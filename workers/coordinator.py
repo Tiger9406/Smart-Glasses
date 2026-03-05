@@ -21,11 +21,6 @@ class Coordinator(BaseWorker):
         super().__init__()
         self.results_queue = results_queue
         self.commands_queue = commands_queue
-        # self.audio_events
-        # self.vision_events
-
-        # maybe more; hold past actions taken by self maybe? or a state, like what's happening in the world rn?
-        # again, decision making module given the initial processing by the workers
 
     def setup(self):
         self.start_time = time.time()
@@ -37,6 +32,7 @@ class Coordinator(BaseWorker):
         self.vlm_tested = False
         self.sample_embeddings = {}
         self.registered_tracks = set()
+
         if config.TEST_REGISTER_IDENTITY and config.SAMPLE_FACE_EMBEDDING_PATHS:
             self.sample_embeddings = {
                 name: np.load(path)
@@ -44,9 +40,7 @@ class Coordinator(BaseWorker):
             }
             self.registered_tracks = set()
 
-        self.gemini_client = GeminiClient(
-            api_key=config.GEMINI_API_KEY, url=config.GEMINI_API_LINK
-        )
+        self.gemini_client = GeminiClient()
 
         # async thread for continual loop for vlm
         self.loop = asyncio.new_event_loop()

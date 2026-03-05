@@ -37,9 +37,7 @@ class VisionWorker(IngestionWorker):
 
         self.buffer_len = int(config.FPS * config.BUFFER_DURATION)
         self.frame_buffer = deque(maxlen=self.buffer_len)
-        self.vlm_client = GeminiClient(
-            api_key=config.GEMINI_API_KEY, url=config.GEMINI_API_LINK
-        )
+        self.vlm_client = GeminiClient()
 
         # async thread for continual loop for vlm
         self.loop = asyncio.new_event_loop()
