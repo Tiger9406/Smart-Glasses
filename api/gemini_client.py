@@ -70,12 +70,15 @@ class GeminiClient:
         ) as response:
             return await self._handle_response(response, "VLM")
 
-    async def analyze_memory(self, conversation_history: str):
+    async def analyze_memory(self, conversation_history: str, known_facts: str = "None"):
         if not self.api_key:
             raise ValueError("API Key not configured")
 
         prompt_template = self.prompt_config.get("memory_prompt_template", "")
-        prompt = prompt_template.format(conversation_history=conversation_history)
+        prompt = prompt_template.format(
+            conversation_history=conversation_history,
+            known_facts=known_facts
+        )
 
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
