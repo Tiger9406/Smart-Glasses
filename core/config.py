@@ -15,7 +15,6 @@ RESOLUTION = (1280, 720)
 FPS = 15
 FRAME_DELAY = 1.0 / FPS
 TARGET_VIDEO = "./api/simulator_resources/Friends_Clip.mp4"
-TARGET_VIDEO = "./api/simulator_resources/Friends_Clip.mp4"
 
 # model for face rec
 DEFAULT_ISF_MODEL = os.getenv("DEFAULT_ISF_MODEL", "Megatron")
