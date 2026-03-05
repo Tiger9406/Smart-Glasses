@@ -14,15 +14,15 @@ HEADER_AUDIO = b"\x02"
 RESOLUTION = (1280, 720)
 FPS = 15
 FRAME_DELAY = 1.0 / FPS
-TARGET_VIDEO = "./api/Friends_Clip.mp4"
-TARGET_VIDEO = "./api/Friends_Clip.mp4"
+TARGET_VIDEO = "./api/simulator_resources/Friends_Clip.mp4"
 
 # model for face rec
 DEFAULT_ISF_MODEL = os.getenv("DEFAULT_ISF_MODEL", "Megatron")
 MEGATRON_MODEL_PATH = os.getenv("MEGATRON_MODEL_PATH", "")
 PIKACHU_MODEL_PATH = os.getenv("PIKACHU_MODEL_PATH", "")
-ANNOTATED_OUTPUT_PATH = "./api/annotated_video.mp4"
+ANNOTATED_OUTPUT_PATH = "./api/simulator_resources/annotated_video.mp4"
 
+USER_NAME = "Tiger"
 DEFAULT_NAME = "Unknown"
 CONFIDENCE_THRESHOLD_DETECTION = 0.5
 CONFIDENCE_THRESHOLD_MATCHING = 0.5
@@ -54,12 +54,14 @@ GEMINI_API_LINK = "https://generativelanguage.googleapis.com/v1beta/models/gemin
 TEMPERATURE = 0.4
 MAXOUTPUTTOKENS = 1000
 VLM_ACTIVE = False
+TOOLS_JSON_PATH = "core/config_tools.json"
+PROMPT_JSON_PATH = "core/config_prompts.json"
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
 SAMPLE_WIDTH = 2
 CHUNK_SIZE = 1024
-TARGET_AUDIO = "./api/MattandShaun.wav"
+TARGET_AUDIO = "./api/simulator_resources/MattandShaun.wav"
 
 # model for audio
 PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"

@@ -12,7 +12,7 @@ import numpy as np
 from core import config
 from workers.base import IngestionWorker
 from workers.vision_utils.inspireface_processor import InspireFaceProcessor
-from workers.vision_utils.VLM import VLMClient
+from api.gemini_client import GeminiClient
 
 
 class VisionWorker(IngestionWorker):
@@ -37,9 +37,7 @@ class VisionWorker(IngestionWorker):
 
         self.buffer_len = int(config.FPS * config.BUFFER_DURATION)
         self.frame_buffer = deque(maxlen=self.buffer_len)
-        self.vlm_client = VLMClient(
-            api_key=config.GEMINI_API_KEY, url=config.GEMINI_API_LINK
-        )
+        self.vlm_client = GeminiClient()
 
         # async thread for continual loop for vlm
         self.loop = asyncio.new_event_loop()

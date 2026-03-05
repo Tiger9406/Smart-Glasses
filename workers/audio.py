@@ -38,7 +38,9 @@ class AudioWorker(IngestionWorker):
             for name, embeddings in speaker_embeddings.items()
         }
 
-        print(f"[Audio] Loaded {len(self.known_speakers)} voice identities from database")
+        print(
+            f"[Audio] Loaded {len(self.known_speakers)} voice identities from database"
+        )
 
         print(
             f"[AudioWorker] Ready. Chunk: {self.chunk_ms}ms ({self.chunk_bytes} bytes)"
@@ -127,6 +129,7 @@ class AudioWorker(IngestionWorker):
                         # start new session if needed could start with no speech
                         if transcriber is None:
                             session_id = str(uuid.uuid4())[:8]
+                            speech_start_time = time.time()
                             ctx = self.model.transcribe_stream(
                                 context_size=context_size
                             )
@@ -161,6 +164,7 @@ class AudioWorker(IngestionWorker):
                                             "type": "speech",
                                             "text": last_text,
                                             "id": session_id,
+                                            "time_start": speech_start_time,
                                             "timestamp": time.time(),
                                             "final": True,
                                             "embedding": embedding,

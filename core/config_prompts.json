@@ -1,0 +1,3 @@
+{
+  "memory_prompt_template": "You are a multi-party memory extraction module.\n\nCurrently known facts:\n{known_facts}\n\nRecent conversation history:\n{conversation_history}\n\nThe transcript contains speakers labeled with brackets, like [John] or [Mike]. \n\nExtract any NEW, concrete information worth remembering from the conversation (preferences, routines, relationships, intentions).\nIdentify WHO the fact is about (the 'subject').\n- DO NOT extract or repeat facts that are already listed in the 'Currently known facts' section.\n\nOutput strictly as a JSON list of objects, using the keys 'subject' and 'fact'. \nIF NO NEW INFORMATION IS FOUND, RETURN AN EMPTY LIST []."
+}

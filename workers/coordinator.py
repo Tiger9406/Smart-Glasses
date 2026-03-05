@@ -1,11 +1,16 @@
+# coordinator: looks at global queue and processes output from sub workers vision and audio
+# kinda like the decision making part
+
 import multiprocessing as mp
 import queue
 import time
+from collections import deque
 
 import inspireface as isf
 import numpy as np
 
-from core.config import SAMPLE_FACE_EMBEDDING_PATHS, TEST_REGISTER_IDENTITY, VLM_ACTIVE
+from api.gemini_client import GeminiClient
+from core import config
 from workers.base import BaseWorker
 
 
@@ -14,24 +19,64 @@ class Coordinator(BaseWorker):
         super().__init__()
         self.results_queue = results_queue
         self.commands_queue = commands_queue
-        # self.audio_events
-        # self.vision_events
-
-        # maybe more; hold past actions taken by self maybe? or a state, like what's happening in the world rn?
-        # again, decision making module given the initial processing by the workers
 
     def setup(self):
         self.start_time = time.time()
         self.request_number = 0
+
+        self.CACHE_DURATION = 10.0
+        self.vision_cache = deque()  # stores tuples of timestamp, face_list
+
         self.vlm_tested = False
         self.sample_embeddings = {}
         self.registered_tracks = set()
-        if TEST_REGISTER_IDENTITY and SAMPLE_FACE_EMBEDDING_PATHS:
+
+        if config.TEST_REGISTER_IDENTITY and config.SAMPLE_FACE_EMBEDDING_PATHS:
             self.sample_embeddings = {
                 name: np.load(path)
-                for name, path in SAMPLE_FACE_EMBEDDING_PATHS.items()
+                for name, path in config.SAMPLE_FACE_EMBEDDING_PATHS.items()
             }
             self.registered_tracks = set()
+
+        self.gemini_client = GeminiClient()
+
+    def _update_vision_cache(self, faces):
+        """Add and remove old face cache"""
+        current_time = time.time()
+        self.vision_cache.append((current_time, faces))
+
+        while (
+            self.vision_cache
+            and (current_time - self.vision_cache[0][0]) > self.CACHE_DURATION
+        ):
+            self.vision_cache.popleft()
+
+    def _resolve_target_face(self, target_timestamp):
+        """Finds frame closest to target_timestamp and return largest unknown face"""
+        if not self.vision_cache:
+            return None
+
+        # finds closest metadata to said timestamp
+        closest_frame = min(
+            self.vision_cache, key=lambda x: abs(x[0] - target_timestamp)
+        )
+        _, faces = closest_frame
+
+        if not faces:
+            return None
+
+        max_area = 0
+        best_face = None
+        for face in faces:
+            if face.get("name", config.DEFAULT_NAME) != config.DEFAULT_NAME:
+                continue
+            x1, y1, x2, y2 = face.get("bbox", (0, 0, 0, 0))
+            area = (x2 - x1) * (y2 - y1)
+            if area > max_area:
+                max_area = area
+                best_face = face
+
+        return best_face
 
     def run(self):
         print("[Coordinator] Started")
@@ -52,7 +97,7 @@ class Coordinator(BaseWorker):
 
     def _test_VLM(self):
         # comment return statement to test VLM funcitonality
-        if not VLM_ACTIVE or self.vlm_tested:
+        if not config.VLM_ACTIVE or self.vlm_tested:
             return
         if time.time() - self.start_time > 5:
             self.vlm_tested = True
@@ -66,7 +111,7 @@ class Coordinator(BaseWorker):
             self.commands_queue.put_nowait(command)
 
     def _test_register_identity(self, event: list[dict]):
-        if not TEST_REGISTER_IDENTITY:
+        if not config.TEST_REGISTER_IDENTITY:
             return
         faces = event.get("faces", [])
 
@@ -119,12 +164,14 @@ class Coordinator(BaseWorker):
             if faces:
                 print(f"\n [Coordinator] Vision Event: detected {len(faces)} faces")
                 for face in faces:
-                    _name = face.get("name", DEFAULT_NAME)
+                    _name = face.get("name", config.DEFAULT_NAME)
                     _score = face.get("score", 0.0)
                     _bbox = face.get("bbox")
                     # print(f" - ID: {face['track_id']} | Name: {name} ({score:.2f}) | Loc: {bbox}")
 
             """
+            faces = event.get("faces", [])
+            self._update_vision_cache(faces)
             self._test_register_identity(event)
             pass
 
@@ -134,11 +181,15 @@ class Coordinator(BaseWorker):
             "type": "speech",
             "text": text,    (would be the audio transcription)
             "id": session_id,
+            "speech_start_time" : time.time()
             "timestamp": time.time(),
             "final": False,
             "name": Unkown,
             "embedding":
             """
+
+            # TODO: parse for intent and if it's register face, get timestamp and have logic there
+
             print(f"[Coordinator] {event['name']}: {event['text']}")
 
         elif event_type == "vlm_result":
