@@ -27,10 +27,18 @@ async def run_tests():
             "Fact payload did not match expected string"
         )
 
-        result3 = await client.parse_intent("What is the capital of France?")
-        assert result3 is None, (
-            f"Expected None for general knowledge question, but got {result3}"
+        result3 = await client.parse_intent("Hey Steve, what is the capital of France?")
+        assert result3 is not None, "Expected the SPEAK tool to trigger, but got None"
+        assert result3["cmd"] == "SPEAK", f"Expected SPEAK, got {result3.get('cmd')}"
+        assert "capital of France" in result3["args"]["message"], (
+            "Message payload did not match"
         )
+
+        result4 = await client.parse_intent("What is the capital of France?")
+        assert result4 is not None, (
+            f"Expected CHAT for general knowledge question, but got {result4}"
+        )
+        assert result4["cmd"] == "CHAT", f"Expected CHAT, got {result3.get('cmd')}"
 
         print("All assertions passed successfully!")
 
