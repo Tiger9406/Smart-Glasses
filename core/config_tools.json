@@ -36,6 +36,20 @@
             },
             "required": ["fact"]
           }
+        },
+        {
+          "name": "chat",
+          "description": "Triggers when the user explicitly addresses the AI assistant named 'Steve' and prompts a response or asks a question (e.g., 'Steve, what time is it?', 'Hey Steve, what do you think?').",
+          "parameters": {
+            "type": "OBJECT",
+            "properties": {
+              "message": {
+                "type": "STRING",
+                "description": "The specific question or prompt directed at Steve."
+              }
+            },
+            "required": ["message"]
+          }
         }
       ]
     }
