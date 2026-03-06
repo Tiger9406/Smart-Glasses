@@ -137,7 +137,7 @@ class Coordinator(BaseWorker):
                             "emb": target_face.get("emb"),
                         }
                     )
-                
+
                 if speaker_name != config.USER_NAME:
                     if speaker_name == config.DEFAULT_NAME and is_self_intro:
                         self.audio_commands_queue.put_nowait(
@@ -148,7 +148,7 @@ class Coordinator(BaseWorker):
                             }
                         )
                     else:
-                        # someone else introducint someone else; no clue bruh
+                        # TODO: someone else introducint someone else; no clue bruh
                         pass
                 elif speaker_name == config.USER_NAME:
                     # user introducing an individual; set a trap for next speaker
@@ -156,6 +156,19 @@ class Coordinator(BaseWorker):
                         "name": name,
                         "timestamp": timestamp,
                     }
+            elif command == "SPEAK":
+                message = args.get("message", "")
+                if message:
+                    print(f"[Coordinator]: [STEVE]: {message}")
+            elif command == "VISION_CONTEXT":
+                prompt = args.get("prompt", "Summarize the video in a sentence")
+                self.vision_commands_queue.put_nowait(
+                    {
+                        "cmd": "GET_VIDEO_CONTEXT",
+                        "prompt": prompt,
+                        "request_id": self.request_number,
+                    }
+                )
 
         else:
             print("\n[Coordinator] got other event")

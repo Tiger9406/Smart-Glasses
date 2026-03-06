@@ -39,10 +39,18 @@
             "properties": {
               "message": {
                 "type": "STRING",
-                "description": "The specific question or prompt directed at Steve."
+                "description": "The answer to the question or prompt directed at Steve."
               }
             },
             "required": ["message"]
+          }
+        },
+        {
+          "name": "vision_context",
+          "description": "Triggers when the user explicitly addresses the AI assistant named 'Steve' and prompts a response about the vision they are looking at (e.g., 'Steve, what am I looking at?')",
+          "parameters": {
+            "type": "OBJECT",
+            "properties": {}
           }
         }
       ]

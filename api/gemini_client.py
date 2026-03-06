@@ -200,3 +200,5 @@ class GeminiClient:
                 raise ValueError(
                     f"Valid finishReason but missing text content. Response: {result}"
                 )
+        elif response_type == "VISION_CONTEXT":
+            return {"cmd": "VISION_CONTEXT"}
