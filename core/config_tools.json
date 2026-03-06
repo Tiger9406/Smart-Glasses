@@ -22,9 +22,13 @@
               "speaker_name": {
                 "type": "STRING",
                 "description": "The exact name of the person speaking the sentence. If unknown, use 'Unknown'."
+              },
+              "is_self_introduction": {
+                "type": "BOOLEAN",
+                "description": "True if the speaker is stating their own name (e.g., 'Hi, I'm Sarah', 'My name is John'). False if they are talking to or about someone else."
               }
             },
-            "required": ["name", "speaker_name"]
+            "required": ["name", "speaker_name", "is_self_introduction"]
           }
         },
         {
