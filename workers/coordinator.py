@@ -26,19 +26,18 @@ class Coordinator(BaseWorker):
 
         self.CACHE_DURATION = 10.0
         self.vision_cache = deque()  # stores tuples of timestamp, face_list
+        self.pending_voice_registration = None
 
-        self.vlm_tested = False
         self.sample_embeddings = {}
         self.registered_tracks = set()
-
         if config.TEST_REGISTER_IDENTITY and config.SAMPLE_FACE_EMBEDDING_PATHS:
             self.sample_embeddings = {
                 name: np.load(path)
                 for name, path in config.SAMPLE_FACE_EMBEDDING_PATHS.items()
             }
-            self.registered_tracks = set()
 
         self.gemini_client = GeminiClient()
+        self.vlm_tested = False
 
     def run(self):
         print("[Coordinator] Started")
@@ -71,6 +70,30 @@ class Coordinator(BaseWorker):
 
         elif event_type == "speech":
             # TODO: parse for intent and if it's register face, get timestamp and have logic there
+            speaker_name = event.get("name", config.DEFAULT_NAME)
+            text = event.get("text", "")
+            timestamp = event.get("speech_start_time", time.time())
+            voice_embedding = event.get("embedding")
+
+            if speaker_name == config.DEFAULT_NAME and self.pending_voice_registration:
+                time_since_reg = timestamp-self.pending_voice_registration["timestamp"]
+                if time_since_reg < 15.0:
+                    target_name = self.pending_voice_registration["name"]
+                    print(f"[Coordinator] Binding unknown voice to pending identity: {target_name}")
+                    self.commands_queue.put_nowait({
+                        "cmd": "REGISTER_VOICE",
+                        "name": target_name,
+                        "embedding": voice_embedding
+                    })
+                    self.pending_voice_registration = None
+
+            prompt = f"Speaker: {speaker_name}. Speech: '{text}'"
+            self.commands_queue.put_nowait({
+                "cmd": "PARSE_INTENT", 
+                "text": prompt,
+                "timestamp": timestamp,
+                "voice_embedding": voice_embedding
+            })
 
             print(f"[Coordinator] {event['name']}: {event['text']}")
 
