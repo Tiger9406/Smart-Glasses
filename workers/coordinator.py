@@ -15,10 +15,18 @@ from workers.base import BaseWorker
 
 
 class Coordinator(BaseWorker):
-    def __init__(self, results_queue: mp.Queue, commands_queue: mp.Queue):
+    def __init__(
+        self,
+        results_queue: mp.Queue,
+        gemini_commands_queue: mp.Queue,
+        vision_commands_queue: mp.Queue,
+        audio_commands_queue: mp.Queue,
+    ):
         super().__init__()
-        self.results_queue = results_queue
-        self.commands_queue = commands_queue
+        self.events_queue = results_queue
+        self.gemini_commands_queue = gemini_commands_queue
+        self.vision_commands_queue = vision_commands_queue
+        self.audio_commands_queue = audio_commands_queue
 
     def setup(self):
         self.start_time = time.time()
@@ -46,7 +54,7 @@ class Coordinator(BaseWorker):
         try:
             while self.running.is_set():
                 try:
-                    event = self.results_queue.get(timeout=0.1)
+                    event = self.events_queue.get(timeout=0.1)
                     self._handle_event(event)
                     self._test_VLM()
                 except queue.Empty:
@@ -69,31 +77,38 @@ class Coordinator(BaseWorker):
             pass
 
         elif event_type == "speech":
-            # TODO: parse for intent and if it's register face, get timestamp and have logic there
             speaker_name = event.get("name", config.DEFAULT_NAME)
             text = event.get("text", "")
             timestamp = event.get("speech_start_time", time.time())
             voice_embedding = event.get("embedding")
 
             if speaker_name == config.DEFAULT_NAME and self.pending_voice_registration:
-                time_since_reg = timestamp-self.pending_voice_registration["timestamp"]
+                time_since_reg = (
+                    timestamp - self.pending_voice_registration["timestamp"]
+                )
                 if time_since_reg < 15.0:
                     target_name = self.pending_voice_registration["name"]
-                    print(f"[Coordinator] Binding unknown voice to pending identity: {target_name}")
-                    self.commands_queue.put_nowait({
-                        "cmd": "REGISTER_VOICE",
-                        "name": target_name,
-                        "embedding": voice_embedding
-                    })
+                    print(
+                        f"[Coordinator] Binding unknown voice to pending identity: {target_name}"
+                    )
+                    self.audio_commands_queue.put_nowait(
+                        {
+                            "cmd": "REGISTER_VOICE",
+                            "name": target_name,
+                            "embedding": voice_embedding,
+                        }
+                    )
                     self.pending_voice_registration = None
 
             prompt = f"Speaker: {speaker_name}. Speech: '{text}'"
-            self.commands_queue.put_nowait({
-                "cmd": "PARSE_INTENT", 
-                "text": prompt,
-                "timestamp": timestamp,
-                "voice_embedding": voice_embedding
-            })
+            self.gemini_commands_queue.put_nowait(
+                {
+                    "cmd": "PARSE_INTENT",
+                    "text": prompt,
+                    "timestamp": timestamp,
+                    "voice_embedding": voice_embedding,
+                }
+            )
 
             print(f"[Coordinator] {event['name']}: {event['text']}")
 
@@ -104,11 +119,43 @@ class Coordinator(BaseWorker):
             command = event.get("cmd", "CHAT")
             args = event.get("args", [])
 
-            if command == "REGISTER_FACE":
-                # so we are given
-                pass
-            elif command == "REGISTER_VOICE":
-                pass
+            timestamp = event.get("timestamp", time.time())
+            voice_embedding = event.get("voice_embedding")
+
+            if command == "REGISTER_IDENTITY":
+                name = args.get("name", config.DEFAULT_NAME)
+                speaker_name = args.get("speaker_name", "Unknown")
+                is_self_intro = args.get("is_self_introduction", False)
+
+                target_face = self._resolve_target_face(timestamp)
+                if target_face:
+                    self.vision_commands_queue.put_nowait(
+                        {
+                            "cmd": "REGISTER_FACE",
+                            "track_id": target_face.get("track_id"),
+                            "name": name,
+                            "emb": target_face.get("emb"),
+                        }
+                    )
+                
+                if speaker_name != config.USER_NAME:
+                    if speaker_name == config.DEFAULT_NAME and is_self_intro:
+                        self.audio_commands_queue.put_nowait(
+                            {
+                                "cmd": "REGISTER_VOICE",
+                                "name": name,
+                                "embedding": voice_embedding,
+                            }
+                        )
+                    else:
+                        # someone else introducint someone else; no clue bruh
+                        pass
+                elif speaker_name == config.USER_NAME:
+                    # user introducing an individual; set a trap for next speaker
+                    self.pending_voice_registration = {
+                        "name": name,
+                        "timestamp": timestamp,
+                    }
 
         else:
             print("\n[Coordinator] got other event")
@@ -166,7 +213,7 @@ class Coordinator(BaseWorker):
             }
             self.request_number += 1
             print("[Coordinator] Put command in vision queue")
-            self.commands_queue.put_nowait(command)
+            self.vision_commands_queue.put_nowait(command)
 
     def _test_register_identity(self, event: list[dict]):
         if not config.TEST_REGISTER_IDENTITY:
@@ -191,7 +238,7 @@ class Coordinator(BaseWorker):
                         "emb": new_emb,
                     }
                     self.request_number += 1
-                    self.commands_queue.put_nowait(command)
+                    self.vision_commands_queue.put_nowait(command)
 
                     # Mark as registered so we don't spam the queue
                     self.registered_tracks.add(track_id)
