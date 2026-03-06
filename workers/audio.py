@@ -44,7 +44,7 @@ class AudioWorker(IngestionWorker):
 
         # average their embeddings in indentify_speaker
         self.known_speakers = {
-            name: np.mean(embeddings, axis=0)
+            name: {"embedding": np.mean(embeddings, axis=0), "count": len(embeddings)}
             for name, embeddings in speaker_embeddings.items()
         }
 
@@ -76,14 +76,14 @@ class AudioWorker(IngestionWorker):
         best_score = self.similarity_threshold
 
         if last_speaker != config.DEFAULT_NAME:
-            avg_emb_last_speaker = self.known_speakers[last_speaker]
+            avg_emb_last_speaker = self.known_speakers[last_speaker]["embedding"]
             similarity_last_speaker = self.cosine_sim(embedding, avg_emb_last_speaker)
             if similarity_last_speaker > self.similarity_threshold:
                 best_name = last_speaker
                 best_score = similarity_last_speaker
 
-        for person, avg_emb in self.known_speakers.items():
-            similarity = self.cosine_sim(embedding, avg_emb)
+        for person, data in self.known_speakers.items():
+            similarity = self.cosine_sim(embedding, data["embedding"])
             if similarity > best_score:
                 best_score = similarity
                 best_name = person
@@ -108,6 +108,7 @@ class AudioWorker(IngestionWorker):
 
         try:
             while self.running.is_set():
+                self._handle_commands()
                 try:
                     raw_bytes = self.input_queue.get(
                         timeout=1.0
@@ -192,3 +193,35 @@ class AudioWorker(IngestionWorker):
         finally:
             if ctx:
                 ctx.__exit__(None, None, None)
+
+    def register_identity(self, name, embedding):
+        curr_data = self.known_speakers.get(name, None)
+        self.db.save_voice_embedding(name, embedding)
+        if curr_data is None:
+            self.known_speakers[name] = {"embedding": embedding, "count": 1}
+            return
+        curr_embedding = curr_data.get("embedding", None)
+        curr_count = curr_data.get("count", 0)
+
+        if curr_embedding is not None and curr_count != 0:
+            new_embedding = (curr_embedding * curr_count + embedding) / (curr_count + 1)
+            self.known_speakers[name] = {
+                "embedding": new_embedding,
+                "count": curr_count + 1,
+            }
+
+    def _handle_commands(self):
+        while not self.command_queue.empty():
+            try:
+                command = self.command_queue.get_nowait()
+                if command.get("cmd") == "REGISTER_VOICE":
+                    # Expected payload: {"cmd": "REGISTER_VOICE", "name": "whatever name", "embedding": np.ndarray}
+                    name = command.get("name")
+                    emb = command.get("embedding")
+                    if name and emb is not None:
+                        self.register_identity(name, emb)
+                        print(f"[Audio] Registered '{name}' using provided embedding.")
+                else:
+                    pass
+            except Exception as e:
+                print(f"[Audio] Command error: {e}")
