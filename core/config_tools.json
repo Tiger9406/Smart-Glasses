@@ -2,13 +2,31 @@
   "systemInstruction": {
     "parts": [
       {
-        "text": "You are an intent parser. Extract commands from the user's speech. If no command is present, output standard text."
+        "text": "You are an intent parser. The main user's name is {user_name}. Extract commands from the transcribed speech. The input format is usually 'Speaker: [Name]: [Text]'."
       }
     ]
   },
   "tools": [
     {
       "functionDeclarations": [
+        {
+          "name": "register_identity",
+          "description": "Triggers when a name is introduced in conversation (e.g., 'Nice to meet you, John', 'This is Sarah', or 'Hi Bob!'",
+          "parameters": {
+            "type": "OBJECT",
+            "properties": {
+              "name": {
+                "type": "STRING",
+                "description": "The name of the person being registered or greeted."
+              },
+              "speaker_name": {
+                "type": "STRING",
+                "description": "The exact name of the person speaking the sentence. If unknown, use 'Unknown'."
+              }
+            },
+            "required": ["name", "speaker_name"]
+          }
+        },
         {
           "name": "register_face",
           "description": "Triggers when the user learns someone's name or is introduced to someone (e.g., 'Nice to meet you, John', 'This is Sarah').",

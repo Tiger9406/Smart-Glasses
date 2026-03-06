@@ -17,8 +17,17 @@ class GeminiClient:
 
         self.timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._session = None
+
         with open(config.TOOLS_JSON_PATH, "r") as f:
-            self.tools_config = json.load(f)
+            tools_config = json.load(f)
+        self.sys_instruct = tools_config.get("systemInstruction", "")
+        if self.sys_instruct and "parts" in self.sys_instruct:
+            base_text = self.sys_instruct["parts"][0]["text"]
+            self.sys_instruct["parts"][0]["text"] = base_text.format(
+                user_name=self.user_name
+            )
+        self.tools = tools_config.get("tools")
+
         with open(config.PROMPT_JSON_PATH, "r") as f:
             self.prompt_config = json.load(f)
 
@@ -111,8 +120,8 @@ class GeminiClient:
 
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
-            "systemInstruction": self.tools_config.get("systemInstruction"),
-            "tools": self.tools_config.get("tools"),
+            "systemInstruction": self.sys_instruct,
+            "tools": self.tools,
             "generationConfig": {
                 "maxOutputTokens": self.max_output_tokens,
                 "temperature": self.temperature,
