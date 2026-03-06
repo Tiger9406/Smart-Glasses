@@ -62,10 +62,10 @@ class AudioWorker(IngestionWorker):
 
     def identify_speaker(self, embedding, last_speaker) -> str:
         # optional so i can convert it to last speaker if it throws None
-        best_name = config.UNKNOWN_SPEAKER
+        best_name = config.DEFAULT_NAME
         best_score = self.similarity_threshold
 
-        if last_speaker != config.UNKNOWN_SPEAKER:
+        if last_speaker != config.DEFAULT_NAME:
             avg_emb_last_speaker = self.known_speakers[last_speaker]
             similarity_last_speaker = self.cosine_sim(embedding, avg_emb_last_speaker)
             if similarity_last_speaker > self.similarity_threshold:
@@ -87,7 +87,7 @@ class AudioWorker(IngestionWorker):
         context_size = (self.context_left, self.context_right)
 
         audio_chunk_holder = []  # this is for storing all chunks to voice recognize at end of sentence
-        last_speaker = config.UNKNOWN_SPEAKER
+        last_speaker = config.DEFAULT_NAME
 
         # session state
         session_id = None
