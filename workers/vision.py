@@ -236,7 +236,7 @@ class VisionWorker(IngestionWorker):
                                 }
                             )
 
-                else:  # handle other types of commands; maybe register face
+                else: 
                     pass
             except Exception as e:
                 print(f"[Vision] Command error: {e}")
