@@ -1,3 +1,4 @@
+import multiprocessing as mp
 import queue
 import time
 import uuid
@@ -13,6 +14,15 @@ from workers.base import IngestionWorker
 
 
 class AudioWorker(IngestionWorker):
+    def __init__(
+        self,
+        input_queue: mp.Queue,
+        output_queue: mp.Queue,
+        audio_command_queue: mp.Queue,
+    ):
+        super().__init__(input_queue, output_queue)
+        self.command_queue = audio_command_queue
+
     def setup(self):
         # so it doesn't read the config every single loop
         self.session = ort.InferenceSession("workers/audio_utils/redimnet_b2.onnx")
