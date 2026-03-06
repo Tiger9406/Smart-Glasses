@@ -40,6 +40,58 @@ class Coordinator(BaseWorker):
 
         self.gemini_client = GeminiClient()
 
+    def run(self):
+        print("[Coordinator] Started")
+        self.setup()
+
+        try:
+            while self.running.is_set():
+                try:
+                    event = self.results_queue.get(timeout=0.1)
+                    self._handle_event(event)
+                    self._test_VLM()
+                except queue.Empty:
+                    continue
+                except KeyboardInterrupt:
+                    break
+        finally:
+            print("[Coordinator] Shutting down")
+
+    def _handle_event(self, event):
+        # handling events; gotta coordinate event data format
+        # for instance if event type is a face in view, we throw it on the picture or sum
+
+        event_type = event.get("type", "unknown")
+
+        if event_type == "vision_result":
+            faces = event.get("faces", [])
+            self._update_vision_cache(faces)
+            self._test_register_identity(event)
+            pass
+
+        elif event_type == "speech":
+            # TODO: parse for intent and if it's register face, get timestamp and have logic there
+
+            print(f"[Coordinator] {event['name']}: {event['text']}")
+
+        elif event_type == "vlm_result":
+            print(f"[Coordinator] Received VLM output: {event['text']}")
+
+        elif event_type == "intent":
+            command = event.get("cmd", "CHAT")
+            args = event.get("args", [])
+
+            if command == "REGISTER_FACE":
+                # so we are given
+                pass
+            elif command == "REGISTER_VOICE":
+                pass
+
+        else:
+            print("\n[Coordinator] got other event")
+
+        return
+
     def _update_vision_cache(self, faces):
         """Add and remove old face cache"""
         current_time = time.time()
@@ -77,23 +129,6 @@ class Coordinator(BaseWorker):
                 best_face = face
 
         return best_face
-
-    def run(self):
-        print("[Coordinator] Started")
-        self.setup()
-
-        try:
-            while self.running.is_set():
-                try:
-                    event = self.results_queue.get(timeout=0.1)
-                    self._handle_event(event)
-                    self._test_VLM()
-                except queue.Empty:
-                    continue
-                except KeyboardInterrupt:
-                    break
-        finally:
-            print("[Coordinator] Shutting down")
 
     def _test_VLM(self):
         # comment return statement to test VLM funcitonality
@@ -141,67 +176,3 @@ class Coordinator(BaseWorker):
                         f"[Coordinator] Put command to register {name} (Track {track_id}) in vision queue"
                     )
                     break
-
-    def _handle_event(self, event):
-        # handling events; gotta coordinate event data format
-        # for instance if event type is a face in view, we throw it on the picture or sum
-
-        event_type = event.get("type", "unknown")
-
-        if event_type == "vision_result":
-            # given list of the following:
-            """{
-                "track_id": track_id,
-                "bbox": (x1, y1, x2, y2),
-                "name": self.active_identities[track_id]["name"],
-                "score": self.active_identities[track_id]["score"],
-                "emb": emb # could be none if embedding not extracted on this frame
-            }"""
-
-            # potential code to work with input faces; nothing for now, too many frames
-            """
-            faces = event.get("faces", [])
-            if faces:
-                print(f"\n [Coordinator] Vision Event: detected {len(faces)} faces")
-                for face in faces:
-                    _name = face.get("name", config.DEFAULT_NAME)
-                    _score = face.get("score", 0.0)
-                    _bbox = face.get("bbox")
-                    # print(f" - ID: {face['track_id']} | Name: {name} ({score:.2f}) | Loc: {bbox}")
-
-            """
-            faces = event.get("faces", [])
-            self._update_vision_cache(faces)
-            self._test_register_identity(event)
-            pass
-
-        elif event_type == "speech":
-            # given:
-            """
-            "type": "speech",
-            "text": text,    (would be the audio transcription)
-            "id": session_id,
-            "speech_start_time" : time.time()
-            "timestamp": time.time(),
-            "final": False,
-            "name": Unkown,
-            "embedding":
-            """
-
-            # TODO: parse for intent and if it's register face, get timestamp and have logic there
-
-            print(f"[Coordinator] {event['name']}: {event['text']}")
-
-        elif event_type == "vlm_result":
-            """"
-            "type": "vlm_result",
-            "request_id": request_id,
-            "text": response_text,
-            "timestamp": time.time(),
-            """
-            print(f"[Coordinator] Received VLM output: {event['text']}")
-
-        else:
-            print("\n[Coordinator] got other event")
-
-        return
