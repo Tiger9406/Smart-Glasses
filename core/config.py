@@ -11,7 +11,7 @@ SERVER_URL = f"ws://localhost:{PORT}/stream"
 HEADER_VISION = b"\x01"
 HEADER_AUDIO = b"\x02"
 
-RESOLUTION = (1280, 720)
+RESOLUTION = (640, 480)
 FPS = 15
 FRAME_DELAY = 1.0 / FPS
 TARGET_VIDEO = "./api/simulator_resources/Friends_Clip.mp4"
