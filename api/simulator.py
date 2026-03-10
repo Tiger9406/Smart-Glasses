@@ -1,16 +1,16 @@
 import asyncio
 import os
+import socket
 import time
 import wave
 
 import cv2
-import websockets
 
 from core import config
 
 
 # defining vision
-async def vision_stream(websocket):
+async def vision_stream(sock: socket.socket, target_addr: tuple):
     print(f"Opening video file: {config.TARGET_VIDEO}")
     cap = cv2.VideoCapture(config.TARGET_VIDEO)
 
@@ -25,6 +25,8 @@ async def vision_stream(websocket):
     frame_delay = 1.0 / fps if fps > 0 else config.FRAME_DELAY
     print(f"Video streaming at {fps if fps > 0 else 'default'} FPS")
 
+    jpeg_quality = 70
+
     try:
         while True:
             start_time = time.time()
@@ -35,21 +37,30 @@ async def vision_stream(websocket):
                 continue
 
             try:
-                success, buffer = cv2.imencode(".jpg", frame)
+                frame = cv2.resize(frame, config.RESOLUTION)
+                # maximal 65507 bytes
+                # around 100 bytes for udp headers, we can fit like 65400 bytes in actual payload
+                encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality]
+                success, buffer = cv2.imencode(".jpg", frame, encode_param)
                 if not success:
                     print("Failed to encode frame")
+                    continue
+
+                image_bytes = buffer.tobytes()
+                payload = config.HEADER_VISION + image_bytes
+
+                if len(payload) > 65400:
+                    print(f"Frame too large ({len(payload)} bytes). gotta drop quality")
+                    jpeg_quality = max(10, jpeg_quality - 10)
                     continue
             except cv2.error as e:
                 print(f"OpenCV specific error occurrsed: {e}")
                 continue
 
-            image_bytes = buffer.tobytes()
-
             try:
-                await websocket.send(config.HEADER_VISION + image_bytes)
-            except websockets.exceptions.ConnectionClosed:
-                print("Vision stream connection closed by server")
-                break
+                sock.sendto(payload, target_addr)
+            except Exception as e:
+                print(f"UDP send error: {e}")
 
             process_time = time.time() - start_time
             sleep_time = max(0, frame_delay - process_time)
@@ -64,7 +75,7 @@ async def vision_stream(websocket):
 
 
 # async func definint audio stream output
-async def audio_stream(websocket):
+async def audio_stream(sock: socket.socket, target_addr: tuple):
     print(f"Starting pcm stream target audio file {config.TARGET_AUDIO}")
     with wave.open(config.TARGET_AUDIO, "rb") as wf:
         if (
@@ -91,11 +102,12 @@ async def audio_stream(websocket):
                     wf.rewind()
                     data = wf.readframes(config.CHUNK_SIZE)
 
+                payload = config.HEADER_AUDIO + data
+
                 try:
-                    await websocket.send(config.HEADER_AUDIO + data)
-                except websockets.exceptions.ConnectionClosed:
-                    print("audio stream connection closed by server")
-                    break
+                    sock.sendto(payload, target_addr)
+                except Exception as e:
+                    print(f"Audio UDP send error: {e}")
 
                 process_time = time.time() - start_time
                 sleep_time = max(0, chunk_duration - process_time)
@@ -122,38 +134,38 @@ async def stream_glasses_data():
         print(f"File not found: {config.TARGET_AUDIO}")
         return
 
-    print("Connecting to server")
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 65536)
+    target_ip = "127.0.0.1" if config.HOST == "0.0.0.0" else config.HOST
+    target_addr = (target_ip, config.PORT)
+    print(f"Streaming to {config.HOST}:{config.PORT}")
 
     try:
-        async with websockets.connect(config.SERVER_URL) as websocket:
-            print("Streaming now")
+        vision_task = asyncio.create_task(vision_stream(sock, target_addr))
+        audio_task = asyncio.create_task(audio_stream(sock, target_addr))
 
-            # create separate tasks
-            vision_task = asyncio.create_task(vision_stream(websocket))
-            audio_task = asyncio.create_task(audio_stream(websocket))
+        done, pending = await asyncio.wait(
+            [vision_task, audio_task], return_when=asyncio.FIRST_COMPLETED
+        )
 
-            done, pending = await asyncio.wait(
-                [vision_task, audio_task], return_when=asyncio.FIRST_COMPLETED
-            )
+        for task in done:
+            if task.exception():
+                print(f"Stream crashed w/ error: {task.exception()}")
+            else:
+                print("Stream finished normally")
 
-            for task in done:
-                if task.exception():
-                    print(f"Stream crashed w/ error: {task.exception()}")
-                else:
-                    print("Stream finished normally")
+        # kill remaining process
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
-            # kill remaining process
-            for task in pending:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-
-    except websockets.exceptions.ConnectionRefusedError:
-        print("Connection failed & could not connect to target server url")
     except Exception as e:
         print(f"Global error: {e}")
+    finally:
+        sock.close()
 
 
 if __name__ == "__main__":
