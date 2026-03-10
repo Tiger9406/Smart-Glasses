@@ -219,7 +219,7 @@ class VisionWorker(IngestionWorker):
                     else:
                         print("[Vision] Can't analyze context because buffer empty")
                 elif command.get("cmd") == "REGISTER_FACE":
-                    # Expected payload: {"cmd": "REGISTER_FACE", "track_id": number, "name": "whatever name", "embedding": np.ndarray}
+                    # Expected payload: {"cmd": "REGISTER_FACE", "track_id": number, "name": "whatever name", "emb": np.ndarray}
                     track_id = command.get("track_id")
                     name = command.get("name")
                     emb = command.get("emb")

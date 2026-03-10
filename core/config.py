@@ -11,7 +11,7 @@ SERVER_URL = f"ws://localhost:{PORT}/stream"
 HEADER_VISION = b"\x01"
 HEADER_AUDIO = b"\x02"
 
-RESOLUTION = (1280, 720)
+RESOLUTION = (640, 480)
 FPS = 15
 FRAME_DELAY = 1.0 / FPS
 TARGET_VIDEO = "./api/simulator_resources/Friends_Clip.mp4"
@@ -66,9 +66,6 @@ TARGET_AUDIO = "./api/simulator_resources/MattandShaun.wav"
 # model for audio
 PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
 
-# chunking
-AUDIO_CHUNK_SIZE_MS = 400  # 800 old
-AUDIO_SAMPLE_RATE_HZ = 16000
 # chunking
 AUDIO_CHUNK_SIZE_MS = 400  # 800 old
 AUDIO_SAMPLE_RATE_HZ = 16000
