@@ -8,14 +8,14 @@ Real-time, asycnh ML-based backend designed for smart glasses
 
 We leverage python's multiprocessing to prevent ML inference from blocking asynchronous network communication
 
-1. **Ingestion:** FastAPI WebSocket receives continuous byt streams of video and audio from client
+1. **Ingestion:** Socket ingestion thread defined in `api.udp_receiver.py`
 2. **Shared Memory:** Data pushed into thread-safe multiprocessing queues, in `shared_mem.py`
 3. **Parallel processing:** We have dedicated workers, each its own subprocess, pulling from the queues to run heavy inferences such as inspireface and MLX parakeet in parallel.
 4. **Coordination:** Central `coordinator.py` aggregating vision and audio workers' processed eventrs, manages overall server state, and decides commands/next action such as registering an identity or summarizing video frames.
 
 ## Tech Stack
 
-- **Networking:** `FastAPI`, `WebSockets`
+- **Networking:** `UDP`
 - **Concurrency:** `multiprocessing`, `asyncio`
 - **Vision** `OpenCV`, `InspireFace`
 - **Audio:** MLX `Parakeet` via `ONNX`
