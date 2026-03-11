@@ -3,26 +3,37 @@ import os
 import socket
 import time
 import wave
+import json
 
 import cv2
 
-from core import config
+CONFIG_PATH = "api/simulator_resources/simulator_config.json"
+try:
+    with open(CONFIG_PATH, "r") as f:
+        config = json.load(f)
+except FileNotFoundError:
+    print(f"Configuration file {CONFIG_PATH} not found")
+    exit(1)
 
+config["resolution"] = tuple(config["resolution"])
+config["header_vision"] = bytes([config["header_vision"]])
+config["header_audio"] = bytes([config["header_audio"]])
+config["frame_delay"] = 1.0 / config["fps"]
 
 # defining vision
 async def vision_stream(sock: socket.socket, target_addr: tuple):
-    print(f"Opening video file: {config.TARGET_VIDEO}")
-    cap = cv2.VideoCapture(config.TARGET_VIDEO)
+    print(f"Opening video file: {config['target_video']}")
+    cap = cv2.VideoCapture(config['target_video'])
 
     if not cap.isOpened():
-        print(f"Error opening video file: {config.TARGET_VIDEO}")
+        print(f"Error opening video file: {config['target_video']}")
         return
 
     # frame delay & such based on video itself instead of glob param; otherwise have to
     # process video further each time
 
     fps = cap.get(cv2.CAP_PROP_FPS)
-    frame_delay = 1.0 / fps if fps > 0 else config.FRAME_DELAY
+    frame_delay = 1.0 / fps if fps > 0 else config["frame_delay"]
     print(f"Video streaming at {fps if fps > 0 else 'default'} FPS")
 
     jpeg_quality = 70
@@ -37,7 +48,7 @@ async def vision_stream(sock: socket.socket, target_addr: tuple):
                 continue
 
             try:
-                frame = cv2.resize(frame, config.RESOLUTION)
+                frame = cv2.resize(frame, config["resolution"])
                 # maximal 65507 bytes
                 # around 100 bytes for udp headers, we can fit like 65400 bytes in actual payload
                 encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality]
@@ -47,7 +58,7 @@ async def vision_stream(sock: socket.socket, target_addr: tuple):
                     continue
 
                 image_bytes = buffer.tobytes()
-                payload = config.HEADER_VISION + image_bytes
+                payload = config["header_vision"] + image_bytes
 
                 if len(payload) > 65400:
                     print(f"Frame too large ({len(payload)} bytes). gotta drop quality")
@@ -76,33 +87,33 @@ async def vision_stream(sock: socket.socket, target_addr: tuple):
 
 # async func definint audio stream output
 async def audio_stream(sock: socket.socket, target_addr: tuple):
-    print(f"Starting pcm stream target audio file {config.TARGET_AUDIO}")
-    with wave.open(config.TARGET_AUDIO, "rb") as wf:
+    print(f"Starting pcm stream target audio file {config['target_audio']}")
+    with wave.open(config['target_audio'], "rb") as wf:
         if (
-            wf.getnchannels() != config.CHANNELS
-            or wf.getsampwidth() != config.SAMPLE_WIDTH
+            wf.getnchannels() != config['channels']
+            or wf.getsampwidth() != config['sample_width']
         ):  # should match mono and two bytes (16 bit)
             print(
-                f"WAV should be {config.CHANNELS} channel, {config.SAMPLE_WIDTH * 8}-bit to simulate smart glasses"
+                f"WAV should be {config['channels']} channel, {config['sample_width'] * 8}-bit to simulate smart glasses"
             )
             return
 
-        chunk_duration = config.CHUNK_SIZE / config.SAMPLE_RATE
-        bytes_per_frame = config.CHANNELS * config.SAMPLE_WIDTH
-        expected_bytes = config.CHUNK_SIZE * bytes_per_frame
+        chunk_duration = config['chunk_size'] / config['sample_rate']
+        bytes_per_frame = config['channels'] * config['sample_width']
+        expected_bytes = config['chunk_size'] * bytes_per_frame
 
-        print(f"Audio streaming at {config.SAMPLE_RATE}Hz")
+        print(f"Audio streaming at {config['sample_rate']}Hz")
 
         try:
             while True:
                 start_time = time.time()
-                data = wf.readframes(config.CHUNK_SIZE)
+                data = wf.readframes(config['chunk_size'])
 
                 if len(data) < expected_bytes:  # end of file; rewind
                     wf.rewind()
-                    data = wf.readframes(config.CHUNK_SIZE)
+                    data = wf.readframes(config['chunk_size'])
 
-                payload = config.HEADER_AUDIO + data
+                payload = config['header_audio'] + data
 
                 try:
                     sock.sendto(payload, target_addr)
@@ -126,19 +137,19 @@ async def stream_glasses_data():
     print("Simulating Smart Glasses Server")
     # repeatedly send over same deafult image
 
-    if not os.path.exists(config.TARGET_VIDEO):
-        print(f"File not found: {config.TARGET_VIDEO}")
+    if not os.path.exists(config['target_video']):
+        print(f"File not found: {config['target_video']}")
         return
 
-    if not os.path.exists(config.TARGET_AUDIO):
-        print(f"File not found: {config.TARGET_AUDIO}")
+    if not os.path.exists(config['target_audio']):
+        print(f"File not found: {config['target_audio']}")
         return
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 65536)
-    target_ip = "127.0.0.1" if config.HOST == "0.0.0.0" else config.HOST
-    target_addr = (target_ip, config.PORT)
-    print(f"Streaming to {config.HOST}:{config.PORT}")
+    target_ip = "127.0.0.1" if config['host'] == "0.0.0.0" else config['host']
+    target_addr = (target_ip, config['port'])
+    print(f"Streaming to {config['host']}:{config['port']}")
 
     try:
         vision_task = asyncio.create_task(vision_stream(sock, target_addr))

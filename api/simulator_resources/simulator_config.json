@@ -1,0 +1,14 @@
+{
+  "host": "0.0.0.0",
+  "port": 8000,
+  "header_vision": 1,
+  "header_audio": 2,
+  "resolution": [640, 480],
+  "fps": 30,
+  "target_video": "api/simulator_resources/LongVideo.mp4",
+  "target_audio": "./api/simulator_resources/LongAudio.wav",
+  "sample_rate": 16000,
+  "channels": 1,
+  "sample_width": 2,
+  "chunk_size": 1024
+}
