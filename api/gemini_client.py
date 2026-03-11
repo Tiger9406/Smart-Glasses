@@ -8,6 +8,7 @@ from core import config
 
 class GeminiClient:
     def __init__(self, timeout_seconds=20):
+        self.active = config.USE_LLM
         self.api_key = config.GEMINI_API_KEY
         self.url = config.GEMINI_API_LINK
         self.max_output_tokens = config.MAXOUTPUTTOKENS
@@ -49,7 +50,8 @@ class GeminiClient:
         Encode frames & send to gemini via http
         return text response or raises exception
         """
-
+        if not self.active:
+            raise ValueError("LLM use set to False")
         if not self.api_key:
             raise ValueError("API Key not configured")
 
@@ -82,6 +84,8 @@ class GeminiClient:
     async def analyze_memory(
         self, conversation_history: str, known_facts: str = "None"
     ):
+        if not self.active:
+            raise ValueError("LLM use set to False")
         if not self.api_key:
             raise ValueError("API Key not configured")
 
@@ -114,6 +118,8 @@ class GeminiClient:
         return extracted_data
 
     async def parse_intent(self, prompt: str) -> str:
+        if not self.active:
+            raise ValueError("LLM use set to False")
         if not self.api_key:
             raise ValueError("API Key not configured")
 

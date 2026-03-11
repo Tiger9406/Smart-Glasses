@@ -49,6 +49,7 @@ SAMPLE_VOICE_EMBEDDING_PATHS = {
 SAVE_ANNOTATED_VID = False
 
 BUFFER_DURATION = 5
+USE_LLM = True
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_API_LINK = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 TEMPERATURE = 0.4
