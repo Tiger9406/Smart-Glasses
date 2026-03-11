@@ -1,6 +1,6 @@
+import sys
 import threading
 import time
-import sys
 
 import numpy as np
 
@@ -8,6 +8,7 @@ from api.udp_receiver import udp_receiver_thread, udp_shutdown_event
 from core import config
 from core.shared_mem import SharedMem
 from database.database import DatabaseManager
+from workers.api_worker import APIWorker
 from workers.audio import AudioWorker
 from workers.coordinator import Coordinator
 from workers.vision import VisionWorker
@@ -38,11 +39,14 @@ def main():
         shared_mem.vision_command_queue,
     )
 
+    api_worker = APIWorker(shared_mem.gemini_command_queue, shared_mem.results_queue)
+
     print("[System] Starting background workers")
 
     brain.start()
     audio_worker.start()
     vision_worker.start()
+    api_worker.start()
 
     # udp ingestion to be a thread since inherently stateless and pretty low resource
     udp_shutdown_event.clear()
@@ -71,7 +75,7 @@ def main():
             db.clear_db()
 
         print("[System] Shutting down workers")
-        workers = [audio_worker, vision_worker, brain]
+        workers = [audio_worker, vision_worker, brain, api_worker]
         for w in workers:
             w.shutdown()
 
@@ -89,6 +93,7 @@ def main():
 
         print("[System] All workers stopped")
         sys.exit(0)
+
 
 if __name__ == "__main__":
     main()

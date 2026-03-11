@@ -86,3 +86,21 @@ The Coordinator sends these to the `commands_queue` to control sub-workers.
 
 * **`GET_VIDEO_CONTEXT`**: Requests the VLM to analyze the current video buffer.
 * **`REGISTER_FACE`**: Tells the Vision worker to bind a `track_id` to a specific `name` and save the embedding.
+
+
+
+### 6. API Command Queue (`gemini_command_queue`)
+
+Commands sent to `APIWorker`:
+
+- `PARSE_INTENT`
+  - Payload: `{"cmd":"PARSE_INTENT","text":str,"timestamp":float,"voice_embedding":np.array|None}`
+  - Result event: `intent`
+
+- `ANALYZE_VIDEO_FRAMES`
+  - Payload: `{"cmd":"ANALYZE_VIDEO_FRAMES","frames":list[bytes],"prompt":str,"request_id":int}`
+  - Result event: `vlm_result`
+
+- `ANALYZE_MEMORY`
+  - Payload: `{"cmd":"ANALYZE_MEMORY","conversation_history":str,"known_facts":str,"subject":str}`
+  - Result event: `memory_result`
