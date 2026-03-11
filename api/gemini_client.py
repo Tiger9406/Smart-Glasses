@@ -114,7 +114,6 @@ class GeminiClient:
         return extracted_data
 
     async def parse_intent(self, prompt: str) -> str:
-
         if not self.api_key:
             raise ValueError("API Key not configured")
 
@@ -185,7 +184,10 @@ class GeminiClient:
                 return []
         elif response_type == "INTENT":
             try:
-                part = candidate.get("content", {}).get("parts", [])[0]
+                parts = candidate.get("content", {}).get("parts", [])
+                if not parts:
+                    return None
+                part = parts[0]
                 if "functionCall" in part:
                     func_call = part["functionCall"]
                     return {
