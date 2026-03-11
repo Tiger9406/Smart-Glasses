@@ -50,11 +50,10 @@ class GeminiClient:
         Encode frames & send to gemini via http
         return text response or raises exception
         """
-
-        if not self.api_key:
-            raise ValueError("API Key not configured")
         if not self.active:
             raise ValueError("LLM use set to False")
+        if not self.api_key:
+            raise ValueError("API Key not configured")
 
         parts = [{"text": prompt}]
 
@@ -85,10 +84,10 @@ class GeminiClient:
     async def analyze_memory(
         self, conversation_history: str, known_facts: str = "None"
     ):
-        if not self.api_key:
-            raise ValueError("API Key not configured")
         if not self.active:
             raise ValueError("LLM use set to False")
+        if not self.api_key:
+            raise ValueError("API Key not configured")
 
         prompt_template = self.prompt_config.get("memory_prompt_template", "")
         prompt = prompt_template.format(
@@ -119,11 +118,10 @@ class GeminiClient:
         return extracted_data
 
     async def parse_intent(self, prompt: str) -> str:
-
-        if not self.api_key:
-            raise ValueError("API Key not configured")
         if not self.active:
             raise ValueError("LLM use set to False")
+        if not self.api_key:
+            raise ValueError("API Key not configured")
 
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
