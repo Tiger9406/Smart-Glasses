@@ -8,6 +8,7 @@ from core import config
 
 class GeminiClient:
     def __init__(self, timeout_seconds=20):
+        self.active = config.USE_LLM
         self.api_key = config.GEMINI_API_KEY
         self.url = config.GEMINI_API_LINK
         self.max_output_tokens = config.MAXOUTPUTTOKENS
@@ -52,6 +53,8 @@ class GeminiClient:
 
         if not self.api_key:
             raise ValueError("API Key not configured")
+        if not self.active:
+            raise ValueError("LLM use set to False")
 
         parts = [{"text": prompt}]
 
@@ -84,6 +87,8 @@ class GeminiClient:
     ):
         if not self.api_key:
             raise ValueError("API Key not configured")
+        if not self.active:
+            raise ValueError("LLM use set to False")
 
         prompt_template = self.prompt_config.get("memory_prompt_template", "")
         prompt = prompt_template.format(
@@ -117,6 +122,8 @@ class GeminiClient:
 
         if not self.api_key:
             raise ValueError("API Key not configured")
+        if not self.active:
+            raise ValueError("LLM use set to False")
 
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
