@@ -16,9 +16,18 @@ class APIWorker(IngestionWorker):
     def __init__(self, input_queue: mp.Queue, output_queue: mp.Queue):
         super().__init__(input_queue, output_queue)
         self.client = GeminiClient()
+        self.loop = None
+
+    def run_async(self, routine):
+        if self.loop is None:
+            raise RuntimeError("No apiworker loop")
+        return self.loop.run_until_complete(routine)
 
     def run(self):
         print("[API Worker] Started")
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+
         try:
             while self.running.is_set():
                 try:
@@ -39,9 +48,16 @@ class APIWorker(IngestionWorker):
                     print(f"[API Worker] Command error: {e}")
         finally:
             try:
-                asyncio.run(self.client.close())
+                if self.loop is not None and not self.loop.is_closed():
+                    self.run_async(self.client.close())
+                    self.loop.run_until_complete(self.loop.shutdown_asyncgens())
+
             except Exception as e:
-                print(f"[API Worker] Error closing Gemini client: {e}")
+                print(f"[API Worker] Error closing API Worker: {e}")
+            finally:
+                if self.loop is not None and not self.loop.is_closed():
+                    self.loop.close()
+                asyncio.set_event_loop(None)
             print("[API Worker] Shutting down")
 
     def _process_command(self, command: dict):
@@ -52,7 +68,7 @@ class APIWorker(IngestionWorker):
             if not prompt:
                 return
 
-            result = asyncio.run(self.client.parse_intent(prompt))
+            result = self.run_async(self.client.parse_intent(prompt))
             if result is None:
                 return
 
@@ -77,12 +93,13 @@ class APIWorker(IngestionWorker):
             if not conversation_history:
                 return
 
-            result = asyncio.run(
+            result = self.run_async(
                 self.client.analyze_memory(
                     conversation_history=conversation_history,
                     known_facts=known_facts,
                 )
             )
+
             self.output_queue.put_nowait(
                 {
                     "type": "memory_result",
