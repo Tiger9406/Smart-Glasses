@@ -170,6 +170,9 @@ class Coordinator(BaseWorker):
                     }
                 )
 
+        elif event_type == "api_error":
+            print(f"Error: {event.get('error')}\nTime: {event.get('timestamp')}")
+
         else:
             print("\n[Coordinator] got other event")
 
