@@ -24,20 +24,30 @@ class AudioWorker(IngestionWorker):
         self.command_queue = audio_command_queue
 
     def setup(self):
-        # so it doesn't read the config every single loop
+        chunk_ms = config.AUDIO_CHUNK_SIZE_MS
+        sample_rate = config.AUDIO_SAMPLE_RATE_HZ
+        self.context_size = (config.CONTEXT_LEFT, config.CONTEXT_RIGHT)
+        self.silent_chunks = config.SPEECH_CHUNK_SIZE
+
+        self.chunk_samples = int(sample_rate * chunk_ms / 1000)  # 16khz * ms of chunks
+        self.chunk_bytes = self.chunk_samples * 2
+        self.similarity_threshold = config.SIMILARITY_THRESHOLD
+
+        print("[AudioWorker] Loading Redimnet model...")
         self.session = ort.InferenceSession("workers/audio_utils/redimnet_b2.onnx")
+
+        print("[AudioWorker] Loading Silero VAD...")
+        self.vad_session = ort.InferenceSession("workers/audio_utils/silero_vad.onnx")
+        self.vad_threshold = 0.5  # anything above 0.5 probability is considered speech
+
+        self.vad_sample_rate = np.array(sample_rate, dtype=np.int64)  # sticky note
+        self.vad_window = 512  # 32ms at 16kHz; new model requirement
+        self.vad_context_size = 64  # a model innate parameter; 64 samples of context
+
+        self.reset_vad_states()
 
         print(f"[AudioWorker] Loading model: {config.PARAKEET_MODEL}")
         self.model = from_pretrained(config.PARAKEET_MODEL)
-        self.chunk_ms = config.AUDIO_CHUNK_SIZE_MS
-        self.sample_rate = config.AUDIO_SAMPLE_RATE_HZ
-        self.context_left = config.CONTEXT_LEFT
-        self.context_right = config.CONTEXT_RIGHT
-        self.silent_chunks = config.SPEECH_CHUNK_SIZE
-        self.loudness_threshold = config.LOUDNESS_THRESHOLD
-        self.chunk_samples = int(self.sample_rate * self.chunk_ms / 1000)
-        self.chunk_bytes = self.chunk_samples * 2
-        self.similarity_threshold = config.SIMILARITY_THRESHOLD
 
         self.db = DatabaseManager()
         speaker_embeddings = self.db.get_all_voices()
@@ -48,21 +58,57 @@ class AudioWorker(IngestionWorker):
             for name, embeddings in speaker_embeddings.items()
         }
 
-        print(
-            f"[Audio] Loaded {len(self.known_speakers)} voice identities from database"
-        )
+        print(f"[AudioWorker] Loaded {len(self.known_speakers)} voice identities")
 
-        print(
-            f"[AudioWorker] Ready. Chunk: {self.chunk_ms}ms ({self.chunk_bytes} bytes)"
-        )
+        print(f"[AudioWorker] Ready. Chunk: {chunk_ms}ms ({self.chunk_bytes} bytes)")
+
+    def reset_vad_states(self):
+        """
+        Called at end of sentence; wipe previous state
+        """
+        # Silero v5 expects state as (2, batch_size, 128)
+        self.vad_state = np.zeros((2, 1, 128), dtype=np.float32)
+
+        # 64 contexts from prev chunk; context for new info
+        self.vad_context = np.zeros((1, self.vad_context_size), dtype=np.float32)
+
+        # buffer to handle input chunk sample not perfectly divisible by 512
+        self.vad_buffer = np.array([], dtype=np.float32)
 
     def speech_checker(self, speech) -> bool:
-        loudness = np.sqrt(
-            np.mean(speech**2)
-        )  # since its a wave between 0 and 1 its squared so its positive, find mean and sqrt it to make it normalize
-        return (
-            loudness > self.loudness_threshold
-        )  # if the mean is very low, the user likely isnt talking
+        # takes new speech chunk into vad_buffer
+        self.vad_buffer = np.concatenate((self.vad_buffer, speech))
+
+        speech_detected = False
+
+        while len(self.vad_buffer) >= self.vad_window:
+            # Pop 512 samples from the front
+            chunk = self.vad_buffer[: self.vad_window].reshape(1, -1)
+            self.vad_buffer = self.vad_buffer[self.vad_window :]
+
+            # Concatenate the previous 64-sample context to the front of the 512 chunk
+            # model actually expects 576 samples (64 + 512)
+            x = np.concatenate((self.vad_context, chunk), axis=1).astype(np.float32)
+
+            ort_inputs = {
+                "input": x,  # audio file
+                "sr": self.vad_sample_rate,  # sample rate: 16khz
+                "state": self.vad_state,  # current state/chain of thought
+            }
+
+            # run inference
+            out, state = self.vad_session.run(None, ort_inputs)
+
+            # update state and context for the NEXT 512-sample chunk
+            self.vad_state = state
+            self.vad_context = chunk[:, -self.vad_context_size :]  # last 64 bytes
+
+            # Check if this specific 32ms micro-chunk contains speech
+            if out[0][0] > self.vad_threshold:
+                speech_detected = True
+
+        # Returns True if any part of the 300ms window had speech
+        return speech_detected
 
     def get_embedding(self, audio):
         return self.session.run(None, {"audio": audio})[0][0]
@@ -94,7 +140,6 @@ class AudioWorker(IngestionWorker):
         self.setup()
 
         audio_buffer = b""
-        context_size = (self.context_left, self.context_right)
 
         audio_chunk_holder = []  # this is for storing all chunks to voice recognize at end of sentence
         last_speaker = config.DEFAULT_NAME
@@ -110,10 +155,8 @@ class AudioWorker(IngestionWorker):
             while self.running.is_set():
                 self._handle_commands()
                 try:
-                    raw_bytes = self.input_queue.get(
-                        timeout=1.0
-                    )  # so it doesnt block forevers
-
+                    # so it doesnt block forevers
+                    raw_bytes = self.input_queue.get(timeout=0.5)
                 except queue.Empty:
                     continue
                 except Exception as E:
@@ -142,7 +185,7 @@ class AudioWorker(IngestionWorker):
                             session_id = str(uuid.uuid4())[:8]
                             speech_start_time = time.time()
                             ctx = self.model.transcribe_stream(
-                                context_size=context_size
+                                context_size=self.context_size
                             )
                             transcriber = ctx.__enter__()
                             last_text = ""
@@ -158,8 +201,10 @@ class AudioWorker(IngestionWorker):
                         if transcriber is not None:
                             silence_count += 1
 
+                            # currently, if past 160 ms and no audio, count as end of sentence
                             if silence_count >= self.silent_chunks:
                                 # sentence break
+                                self.reset_vad_states()
 
                                 sentence_audio = np.concatenate(audio_chunk_holder)
                                 audio_reshaped = sentence_audio.reshape(

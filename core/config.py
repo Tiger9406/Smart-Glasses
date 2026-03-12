@@ -6,15 +6,11 @@ load_dotenv()
 
 HOST = "0.0.0.0"
 PORT = 8000
-SERVER_URL = f"ws://localhost:{PORT}/stream"
 
 HEADER_VISION = b"\x01"
 HEADER_AUDIO = b"\x02"
 
-RESOLUTION = (640, 480)
-FPS = 15
-FRAME_DELAY = 1.0 / FPS
-TARGET_VIDEO = "./api/simulator_resources/Friends_Clip.mp4"
+FPS = 30
 
 # model for face rec
 DEFAULT_ISF_MODEL = os.getenv("DEFAULT_ISF_MODEL", "Megatron")
@@ -36,20 +32,14 @@ def get_model_path(model_type):
 
 TEST_REGISTER_IDENTITY = False
 START_WITH_SAMPLE_DATA = True
-SAMPLE_FACE_EMBEDDING_PATHS = {
-    "Joey": "database/sample_data/face_joey_tribbiani.npy",
-    "Rachel": "database/sample_data/face_rachel_greene.npy",
-    "Ross": "database/sample_data/face_ross_geller.npy",
-}
+SAMPLE_FACE_EMBEDDING_PATHS = {}
 SAMPLE_VOICE_EMBEDDING_PATHS = {
-    "Shaun": ["database/sample_data/voice_Shaun1.npy"],
-    "Matt": ["database/sample_data/voice_Matt1.npy"],
     "Tiger": ["database/sample_data/voice_Tiger1.npy"],
 }
 SAVE_ANNOTATED_VID = False
 
 BUFFER_DURATION = 5
-USE_LLM = True
+USE_LLM = False
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_API_LINK = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 TEMPERATURE = 0.4
@@ -58,17 +48,11 @@ VLM_ACTIVE = False
 TOOLS_JSON_PATH = "core/config_tools.json"
 PROMPT_JSON_PATH = "core/config_prompts.json"
 
-SAMPLE_RATE = 16000
-CHANNELS = 1
-SAMPLE_WIDTH = 2
-CHUNK_SIZE = 1024
-TARGET_AUDIO = "./api/simulator_resources/MattandShaun.wav"
-
 # model for audio
 PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
 
 # chunking
-AUDIO_CHUNK_SIZE_MS = 400  # 800 old
+AUDIO_CHUNK_SIZE_MS = 160  # 300 milliseconds
 AUDIO_SAMPLE_RATE_HZ = 16000
 
 # Streaming context, defaults used in parakeet readme
@@ -76,8 +60,7 @@ CONTEXT_LEFT = 64  # 256 default both
 CONTEXT_RIGHT = 64
 
 # variables for checking if a person stopped talking
-SPEECH_CHUNK_SIZE = 1  # each chunk is 0.8 seconds so 3 chunks means they stop speaking for 2.4 seconds to signify a sentence break
-LOUDNESS_THRESHOLD = 0.01  # how quiet it needs to be to signify stop talking, can tune this when we get mic based on backround noise
+SPEECH_CHUNK_SIZE = 2  #how many chunks of audio_chunk_size silent to consider end of sentence
 
 # voice diartization
 SIMILARITY_THRESHOLD = 0.55
