@@ -1,6 +1,6 @@
+import queue
 import socket
 import threading
-import queue
 
 from core import config
 from core.shared_mem import SharedMem
@@ -12,10 +12,8 @@ def udp_receiver_thread(shared_mem: SharedMem):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65536)
 
-    sock.settimeout(1.0)  # time-out to check udp_shutdown; to address blocking sock.recvfrom
-    sock.bind(
-        (config.HOST, config.PORT)
-    )
+    sock.settimeout(1.0)  # time-out to check udp_shutdown
+    sock.bind((config.HOST, config.PORT))
 
     print(f"[System] UDP Server listening on {config.HOST}:{config.PORT}")
 
