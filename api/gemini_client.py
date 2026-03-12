@@ -51,7 +51,7 @@ class GeminiClient:
         return text response or raises exception
         """
         if not self.active:
-            raise ValueError("LLM use set to False")
+            return
         if not self.api_key:
             raise ValueError("API Key not configured")
 
@@ -85,7 +85,7 @@ class GeminiClient:
         self, conversation_history: str, known_facts: str = "None"
     ):
         if not self.active:
-            raise ValueError("LLM use set to False")
+            return
         if not self.api_key:
             raise ValueError("API Key not configured")
 
@@ -119,7 +119,7 @@ class GeminiClient:
 
     async def parse_intent(self, prompt: str) -> str:
         if not self.active:
-            raise ValueError("LLM use set to False")
+            return
         if not self.api_key:
             raise ValueError("API Key not configured")
 
