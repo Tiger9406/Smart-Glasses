@@ -64,6 +64,6 @@ CONTEXT_RIGHT = 64
 SILENT_CHUNK_THRESHOLD = 1  #how many chunks of audio_chunk_size silent to consider end of sentence
 
 # voice diartization
-SIMILARITY_THRESHOLD = 0.55
+SIMILARITY_THRESHOLD = 0.30
 
 IDENTITY_DB_PATH = "./database/identities.db"
