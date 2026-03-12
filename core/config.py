@@ -51,8 +51,9 @@ PROMPT_JSON_PATH = "core/config_prompts.json"
 # model for audio
 PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
 
+DEBUG_AUDIO = False
 # chunking
-AUDIO_CHUNK_SIZE_MS = 160  # 300 milliseconds
+AUDIO_CHUNK_SIZE_MS = 160 
 AUDIO_SAMPLE_RATE_HZ = 16000
 
 # Streaming context, defaults used in parakeet readme
@@ -60,7 +61,7 @@ CONTEXT_LEFT = 64  # 256 default both
 CONTEXT_RIGHT = 64
 
 # variables for checking if a person stopped talking
-SPEECH_CHUNK_SIZE = 2  #how many chunks of audio_chunk_size silent to consider end of sentence
+SILENT_CHUNK_THRESHOLD = 1  #how many chunks of audio_chunk_size silent to consider end of sentence
 
 # voice diartization
 SIMILARITY_THRESHOLD = 0.55
