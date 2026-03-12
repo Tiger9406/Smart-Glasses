@@ -1,7 +1,10 @@
+import collections
 import multiprocessing as mp
+import os
 import queue
 import time
 import uuid
+import wave
 
 import mlx.core as mx
 import numpy as np
@@ -26,12 +29,14 @@ class AudioWorker(IngestionWorker):
     def setup(self):
         chunk_ms = config.AUDIO_CHUNK_SIZE_MS
         sample_rate = config.AUDIO_SAMPLE_RATE_HZ
-        self.context_size = (config.CONTEXT_LEFT, config.CONTEXT_RIGHT)
-        self.silent_chunks = config.SPEECH_CHUNK_SIZE
+        self.silent_chunks = config.SILENT_CHUNK_THRESHOLD
 
         self.chunk_samples = int(sample_rate * chunk_ms / 1000)  # 16khz * ms of chunks
         self.chunk_bytes = self.chunk_samples * 2
         self.similarity_threshold = config.SIMILARITY_THRESHOLD
+
+        self.padding_chunks = int(320 / chunk_ms)  # how many chunks make up 320ms
+        self.chunk_duration_sec = chunk_ms / 1000.0
 
         print("[AudioWorker] Loading Redimnet model...")
         self.session = ort.InferenceSession("workers/audio_utils/redimnet_b2.onnx")
@@ -140,7 +145,6 @@ class AudioWorker(IngestionWorker):
         self.setup()
 
         audio_buffer = b""
-
         audio_chunk_holder = []  # this is for storing all chunks to voice recognize at end of sentence
         last_speaker = config.DEFAULT_NAME
 
@@ -148,8 +152,9 @@ class AudioWorker(IngestionWorker):
         session_id = None
         transcriber = None
         ctx = None
-        last_text = ""
         silence_count = 0  # track consecutive silent chunks
+
+        self.pre_speech_buffer = collections.deque(maxlen=self.padding_chunks)
 
         try:
             while self.running.is_set():
@@ -160,7 +165,7 @@ class AudioWorker(IngestionWorker):
                 except queue.Empty:
                     continue
                 except Exception as E:
-                    print("[Error] ", E)
+                    print("[AudioWorker] Error: ", E)
                     raise RuntimeError
 
                 audio_buffer += raw_bytes
@@ -176,37 +181,44 @@ class AudioWorker(IngestionWorker):
                     is_speech = self.speech_checker(samples)  # check if speech
 
                     if is_speech:
-                        audio_chunk_holder.append(samples)
-
                         silence_count = 0  # reset silence counter cus speech
 
                         # start new session if needed could start with no speech
                         if transcriber is None:
                             session_id = str(uuid.uuid4())[:8]
+
                             speech_start_time = time.time()
+
                             ctx = self.model.transcribe_stream(
-                                context_size=self.context_size
+                                context_size=(config.CONTEXT_LEFT, config.CONTEXT_RIGHT)
                             )
                             transcriber = ctx.__enter__()
-                            last_text = ""
 
-                        transcriber.add_audio(mx.array(samples))
-                        text = transcriber.result.text.strip()
+                            for buffered_samples in self.pre_speech_buffer:
+                                audio_chunk_holder.append(buffered_samples)
+                            self.pre_speech_buffer.clear()
 
-                        if text and text != last_text:
-                            last_text = text
+                        audio_chunk_holder.append(samples)
 
-                    else:
-                        # silence
+                    else:  # silence
                         if transcriber is not None:
                             silence_count += 1
 
-                            # currently, if past 160 ms and no audio, count as end of sentence
+                            audio_chunk_holder.append(samples)
+
+                            # if past certain number chunks & no speech
                             if silence_count >= self.silent_chunks:
                                 # sentence break
                                 self.reset_vad_states()
 
                                 sentence_audio = np.concatenate(audio_chunk_holder)
+
+                                if config.DEBUG_AUDIO:
+                                    self._debug_audio(session_id, sentence_audio)
+
+                                transcriber.add_audio(mx.array(sentence_audio))
+                                final_text = transcriber.result.text.strip()
+
                                 audio_reshaped = sentence_audio.reshape(
                                     1, -1
                                 )  # to make it 2d arr
@@ -214,11 +226,11 @@ class AudioWorker(IngestionWorker):
                                 speaker = self.identify_speaker(embedding, last_speaker)
                                 last_speaker = speaker
 
-                                if last_text:
+                                if final_text:
                                     self.output_queue.put(
                                         {
                                             "type": "speech",
-                                            "text": last_text,
+                                            "text": final_text,
                                             "id": session_id,
                                             "time_start": speech_start_time,
                                             "timestamp": time.time(),
@@ -232,9 +244,11 @@ class AudioWorker(IngestionWorker):
                                 transcriber = None
                                 ctx = None
                                 session_id = None
-                                last_text = ""
                                 silence_count = 0
                                 audio_chunk_holder = []
+
+                        else:
+                            self.pre_speech_buffer.append(samples)
         finally:
             if ctx:
                 ctx.__exit__(None, None, None)
@@ -270,3 +284,20 @@ class AudioWorker(IngestionWorker):
                     pass
             except Exception as e:
                 print(f"[Audio] Command error: {e}")
+
+    def _debug_audio(self, session_id, sentence_audio):
+        os.makedirs("api/simulator_resources/debug_audios", exist_ok=True)
+        debug_filename = (
+            f"api/simulator_resources/debug_audios/debug_{int(time.time())}.wav"
+        )
+
+        # Convert the float32 array (-1.0 to 1.0) back to int16 PCM
+        audio_int16 = (sentence_audio * 32767.0).astype(np.int16)
+
+        with wave.open(debug_filename, "wb") as wf:
+            wf.setnchannels(1)  # Mono
+            wf.setsampwidth(2)  # 2 bytes = 16-bit
+            wf.setframerate(config.AUDIO_SAMPLE_RATE_HZ)
+            wf.writeframes(audio_int16.tobytes())
+
+        print("[Debug] Saved audio chunk")
