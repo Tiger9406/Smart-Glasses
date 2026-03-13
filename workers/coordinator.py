@@ -6,7 +6,6 @@ import queue
 import time
 from collections import deque
 
-import inspireface as isf
 import numpy as np
 
 from api.gemini_client import GeminiClient
@@ -45,7 +44,6 @@ class Coordinator(BaseWorker):
             }
 
         self.gemini_client = GeminiClient()
-        self.vlm_tested = False
 
     def run(self):
         print("[Coordinator] Started")
@@ -56,7 +54,6 @@ class Coordinator(BaseWorker):
                 try:
                     event = self.events_queue.get(timeout=0.1)
                     self._handle_event(event)
-                    self._test_VLM()
                 except queue.Empty:
                     continue
                 except KeyboardInterrupt:
@@ -73,7 +70,6 @@ class Coordinator(BaseWorker):
         if event_type == "vision_result":
             faces = event.get("faces", [])
             self._update_vision_cache(faces)
-            self._test_register_identity(event)
             pass
 
         elif event_type == "speech":
@@ -215,50 +211,3 @@ class Coordinator(BaseWorker):
                 best_face = face
 
         return best_face
-
-    def _test_VLM(self):
-        # comment return statement to test VLM funcitonality
-        if self.vlm_tested:
-            return
-        if time.time() - self.start_time > 5:
-            self.vlm_tested = True
-            command = {
-                "cmd": "GET_VIDEO_CONTEXT",
-                "prompt": "Summarize the video in a sentence",
-                "request_id": self.request_number,
-            }
-            self.request_number += 1
-            print("[Coordinator] Put command in vision queue")
-            self.vision_commands_queue.put_nowait(command)
-
-    def _test_register_identity(self, event: list[dict]):
-        if not config.TEST_REGISTER_IDENTITY:
-            return
-        faces = event.get("faces", [])
-
-        for face in faces:
-            new_emb = face.get("emb", None)
-            track_id = face.get("track_id")
-
-            # skip if no embedding or we already registered
-            if new_emb is None or track_id in self.registered_tracks:
-                continue
-
-            for name, emb in self.sample_embeddings.items():
-                score = isf.feature_comparison(emb, new_emb)
-                if score > 0.5:
-                    command = {
-                        "cmd": "REGISTER_FACE",
-                        "track_id": track_id,
-                        "name": name,
-                        "emb": new_emb,
-                    }
-                    self.request_number += 1
-                    self.vision_commands_queue.put_nowait(command)
-
-                    # Mark as registered so we don't spam the queue
-                    self.registered_tracks.add(track_id)
-                    print(
-                        f"[Coordinator] Put command to register {name} (Track {track_id}) in vision queue"
-                    )
-                    break

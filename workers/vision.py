@@ -9,11 +9,11 @@ from collections import deque
 import cv2
 import numpy as np
 
-from core import config
-from workers.vision_utils import config_vision
-from workers.base import IngestionWorker
-from workers.vision_utils.inspireface_processor import InspireFaceProcessor
 from api.gemini_client import GeminiClient
+from core import config
+from workers.base import IngestionWorker
+from workers.vision_utils import config_vision
+from workers.vision_utils.inspireface_processor import InspireFaceProcessor
 
 
 class VisionWorker(IngestionWorker):
@@ -38,7 +38,7 @@ class VisionWorker(IngestionWorker):
 
         self.buffer_len = int(config_vision.FPS * config_vision.BUFFER_DURATION)
         self.frame_buffer = deque(maxlen=self.buffer_len)
-        self.vlm_client = GeminiClient()
+        self.vlm_client = GeminiClient() # its own gemini client
 
         # async thread for continual loop for vlm
         self.loop = asyncio.new_event_loop()
@@ -207,7 +207,7 @@ class VisionWorker(IngestionWorker):
                     if not config_vision.VLM_ACTIVE:
                         print("[Vision] VLM configed to be inactive")
                         return
-                    
+
                     if len(self.frame_buffer) > 0:
                         snapshot = list(self.frame_buffer)
                         # get just the bytes
@@ -241,7 +241,7 @@ class VisionWorker(IngestionWorker):
                                 }
                             )
 
-                else: 
+                else:
                     pass
             except Exception as e:
                 print(f"[Vision] Command error: {e}")
@@ -264,7 +264,10 @@ class VisionWorker(IngestionWorker):
             print(f"[Vision] VLM task error: {e}")
 
     def _init_video_writer(
-        self, frame, output_path=config_vision.ANNOTATED_OUTPUT_PATH, fps=config_vision.FPS
+        self,
+        frame,
+        output_path=config_vision.ANNOTATED_OUTPUT_PATH,
+        fps=config_vision.FPS,
     ):
         """initialize VideoWriter based on the first frame's dimensions"""
         output_dir = os.path.dirname(output_path)
