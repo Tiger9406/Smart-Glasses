@@ -3,19 +3,20 @@ import numpy as np
 from inspireface import FaceInformation
 
 from core import config
+from workers.vision_utils import config_vision
 from database.database import DatabaseManager
 
 
 class InspireFaceProcessor:
     def __init__(
         self,
-        model_type=config.DEFAULT_ISF_MODEL,
+        model_type=config_vision.DEFAULT_ISF_MODEL,
         model_path=None,
-        confidence_threshold=config.CONFIDENCE_THRESHOLD_DETECTION,
+        confidence_threshold=config_vision.CONFIDENCE_THRESHOLD_DETECTION,
         download_model=False,
     ):
         if model_path is None:
-            model_path = config.get_model_path(model_type)
+            model_path = config_vision.get_model_path(model_type)
 
         self.session = None
         self.db = DatabaseManager()
@@ -93,7 +94,7 @@ class InspireFaceProcessor:
         return best_comp
 
     def identify_embedding(
-        self, embedding: np.ndarray, threshold=config.CONFIDENCE_THRESHOLD_MATCHING
+        self, embedding: np.ndarray, threshold=config_vision.CONFIDENCE_THRESHOLD_MATCHING
     ):
         # given embedding, compare to known faces and return best match name and according score
         best_score = 0.0
