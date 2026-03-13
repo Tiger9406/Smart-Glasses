@@ -218,7 +218,7 @@ class Coordinator(BaseWorker):
 
     def _test_VLM(self):
         # comment return statement to test VLM funcitonality
-        if not config.VLM_ACTIVE or self.vlm_tested:
+        if self.vlm_tested:
             return
         if time.time() - self.start_time > 5:
             self.vlm_tested = True
