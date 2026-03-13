@@ -10,9 +10,8 @@ import cv2
 import numpy as np
 
 from api.gemini_client import GeminiClient
-from core import config
+from core import config, config_vision
 from workers.base import IngestionWorker
-from workers.vision_utils import config_vision
 from workers.vision_utils.inspireface_processor import InspireFaceProcessor
 
 
@@ -38,7 +37,7 @@ class VisionWorker(IngestionWorker):
 
         self.buffer_len = int(config_vision.FPS * config_vision.BUFFER_DURATION)
         self.frame_buffer = deque(maxlen=self.buffer_len)
-        self.vlm_client = GeminiClient() # its own gemini client
+        self.vlm_client = GeminiClient()  # its own gemini client
 
         # async thread for continual loop for vlm
         self.loop = asyncio.new_event_loop()
@@ -78,7 +77,7 @@ class VisionWorker(IngestionWorker):
                     continue
 
                 # for testing purposes: if we wanna see bounding box behavior
-                if config.SAVE_ANNOTATED_VID and self.video_writer is None:
+                if config_vision.SAVE_ANNOTATED_VID and self.video_writer is None:
                     self._init_video_writer(frame)
 
                 self._facial_loop(frame)

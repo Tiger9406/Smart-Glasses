@@ -3,7 +3,7 @@ import json
 
 import aiohttp
 
-from api.gemini_config import config_gemini
+from core import config_gemini
 from core.config import USER_NAME
 
 

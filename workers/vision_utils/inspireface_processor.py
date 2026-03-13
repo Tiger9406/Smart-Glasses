@@ -3,7 +3,7 @@ import numpy as np
 from inspireface import FaceInformation
 
 from core import config
-from workers.vision_utils import config_vision
+from core import config_vision
 from database.database import DatabaseManager
 
 

@@ -11,9 +11,8 @@ import numpy as np
 import onnxruntime as ort
 from parakeet_mlx import from_pretrained
 
-from core import config
+from core import config, config_audio
 from database.database import DatabaseManager
-from workers.audio_utils import config_audio
 from workers.base import IngestionWorker
 
 

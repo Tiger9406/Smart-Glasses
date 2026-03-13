@@ -10,4 +10,4 @@ MAXOUTPUTTOKENS = 1000
 TOOLS_JSON_PATH = "api/gemini_config/config_tools.json"
 PROMPT_JSON_PATH = "api/gemini_config/config_prompts.json"
 
-USE_LLM = False
+USE_LLM = True

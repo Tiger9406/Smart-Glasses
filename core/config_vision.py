@@ -15,6 +15,7 @@ CONFIDENCE_THRESHOLD_MATCHING = 0.5
 
 BUFFER_DURATION = 5
 VLM_ACTIVE = False
+SAVE_ANNOTATED_VID = True
 
 def get_model_path(model_type):
     if model_type == "Megatron":

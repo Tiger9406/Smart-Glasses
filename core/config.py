@@ -13,6 +13,5 @@ SAMPLE_FACE_EMBEDDING_PATHS = {}
 SAMPLE_VOICE_EMBEDDING_PATHS = {
     "Tiger": ["database/sample_data/voice_Tiger1.npy"],
 }
-SAVE_ANNOTATED_VID = False
 
 IDENTITY_DB_PATH = "./database/identities.db"
