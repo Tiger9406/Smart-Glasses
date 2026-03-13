@@ -8,6 +8,8 @@ __pycache__/
 /api/video_converter.py
 /api/simulator_resources/annotated*
 
+/tests/test_vision_tasks_legacy.txt
+
 *.db
 *.db-shm
 *.db-wal
