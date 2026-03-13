@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from core import config
+from workers.vision_utils import config_vision
 from workers.base import IngestionWorker
 from workers.vision_utils.inspireface_processor import InspireFaceProcessor
 from api.gemini_client import GeminiClient
@@ -35,7 +36,7 @@ class VisionWorker(IngestionWorker):
         self.CONFIDENCE_THRESHOLD = 0.5
         self.LOST_TRACK_THRESHOLD = 1.0  # keep ids alive for a second before removing
 
-        self.buffer_len = int(config.FPS * config.BUFFER_DURATION)
+        self.buffer_len = int(config_vision.FPS * config_vision.BUFFER_DURATION)
         self.frame_buffer = deque(maxlen=self.buffer_len)
         self.vlm_client = GeminiClient()
 
@@ -203,6 +204,10 @@ class VisionWorker(IngestionWorker):
             try:
                 command = self.command_queue.get_nowait()
                 if command.get("cmd") == "GET_VIDEO_CONTEXT":
+                    if not config_vision.VLM_ACTIVE:
+                        print("[Vision] VLM configed to be inactive")
+                        return
+                    
                     if len(self.frame_buffer) > 0:
                         snapshot = list(self.frame_buffer)
                         # get just the bytes
@@ -259,7 +264,7 @@ class VisionWorker(IngestionWorker):
             print(f"[Vision] VLM task error: {e}")
 
     def _init_video_writer(
-        self, frame, output_path=config.ANNOTATED_OUTPUT_PATH, fps=config.FPS
+        self, frame, output_path=config_vision.ANNOTATED_OUTPUT_PATH, fps=config_vision.FPS
     ):
         """initialize VideoWriter based on the first frame's dimensions"""
         output_dir = os.path.dirname(output_path)
