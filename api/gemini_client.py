@@ -3,23 +3,23 @@ import json
 
 import aiohttp
 
-from core import config
+from api.gemini_config import config_gemini
 
 
 class GeminiClient:
     def __init__(self, timeout_seconds=20):
-        self.active = config.USE_LLM
-        self.api_key = config.GEMINI_API_KEY
-        self.url = config.GEMINI_API_LINK
-        self.max_output_tokens = config.MAXOUTPUTTOKENS
-        self.temperature = config.TEMPERATURE
+        self.active = config_gemini.USE_LLM
+        self.api_key = config_gemini.GEMINI_API_KEY
+        self.url = config_gemini.GEMINI_API_LINK
+        self.max_output_tokens = config_gemini.MAXOUTPUTTOKENS
+        self.temperature = config_gemini.TEMPERATURE
 
-        self.user_name = config.USER_NAME
+        self.user_name = config_gemini.USER_NAME
 
         self.timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._session = None
 
-        with open(config.TOOLS_JSON_PATH, "r") as f:
+        with open(config_gemini.TOOLS_JSON_PATH, "r") as f:
             tools_config = json.load(f)
         self.sys_instruct = tools_config.get("systemInstruction", "")
         if self.sys_instruct and "parts" in self.sys_instruct:
@@ -29,7 +29,7 @@ class GeminiClient:
             )
         self.tools = tools_config.get("tools")
 
-        with open(config.PROMPT_JSON_PATH, "r") as f:
+        with open(config_gemini.PROMPT_JSON_PATH, "r") as f:
             self.prompt_config = json.load(f)
 
     async def _get_session(self) -> aiohttp.ClientSession:
