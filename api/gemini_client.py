@@ -4,6 +4,7 @@ import json
 import aiohttp
 
 from api.gemini_config import config_gemini
+from core.config import USER_NAME
 
 
 class GeminiClient:
@@ -14,7 +15,7 @@ class GeminiClient:
         self.max_output_tokens = config_gemini.MAXOUTPUTTOKENS
         self.temperature = config_gemini.TEMPERATURE
 
-        self.user_name = config_gemini.USER_NAME
+        self.user_name = USER_NAME
 
         self.timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._session = None
