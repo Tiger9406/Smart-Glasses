@@ -13,6 +13,7 @@ from parakeet_mlx import from_pretrained
 
 from core import config
 from database.database import DatabaseManager
+from workers.audio_utils import config_audio
 from workers.base import IngestionWorker
 
 
@@ -27,22 +28,22 @@ class AudioWorker(IngestionWorker):
         self.command_queue = audio_command_queue
 
     def setup(self):
-        chunk_ms = config.AUDIO_CHUNK_SIZE_MS
-        sample_rate = config.AUDIO_SAMPLE_RATE_HZ
-        self.silent_chunks = config.SILENT_CHUNK_THRESHOLD
+        chunk_ms = config_audio.AUDIO_CHUNK_SIZE_MS
+        sample_rate = config_audio.AUDIO_SAMPLE_RATE_HZ
+        self.silent_chunks = config_audio.SILENT_CHUNK_THRESHOLD
 
         self.chunk_samples = int(sample_rate * chunk_ms / 1000)  # 16khz * ms of chunks
         self.chunk_bytes = self.chunk_samples * 2
-        self.similarity_threshold = config.SIMILARITY_THRESHOLD
+        self.similarity_threshold = config_audio.SIMILARITY_THRESHOLD
 
         self.padding_chunks = int(320 / chunk_ms)  # how many chunks make up 320ms
         self.chunk_duration_sec = chunk_ms / 1000.0
 
         print("[AudioWorker] Loading Redimnet model...")
-        self.session = ort.InferenceSession("workers/audio_utils/redimnet_b2.onnx")
+        self.redimnet_session = ort.InferenceSession(config_audio.REDIMNET_PATH)
 
         print("[AudioWorker] Loading Silero VAD...")
-        self.vad_session = ort.InferenceSession("workers/audio_utils/silero_vad.onnx")
+        self.vad_session = ort.InferenceSession(config_audio.VAD_PATH)
         self.vad_threshold = 0.5  # anything above 0.5 probability is considered speech
 
         self.vad_sample_rate = np.array(sample_rate, dtype=np.int64)  # sticky note
@@ -51,8 +52,8 @@ class AudioWorker(IngestionWorker):
 
         self.reset_vad_states()
 
-        print(f"[AudioWorker] Loading model: {config.PARAKEET_MODEL}")
-        self.model = from_pretrained(config.PARAKEET_MODEL)
+        print(f"[AudioWorker] Loading model: {config_audio.PARAKEET_MODEL}")
+        self.model = from_pretrained(config_audio.PARAKEET_MODEL)
 
         self.db = DatabaseManager()
         speaker_embeddings = self.db.get_all_voices()
@@ -116,7 +117,7 @@ class AudioWorker(IngestionWorker):
         return speech_detected
 
     def get_embedding(self, audio):
-        return self.session.run(None, {"audio": audio})[0][0]
+        return self.redimnet_session.run(None, {"audio": audio})[0][0]
 
     def cosine_sim(self, a, b):
         return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
@@ -190,7 +191,10 @@ class AudioWorker(IngestionWorker):
                             speech_start_time = time.time()
 
                             ctx = self.model.transcribe_stream(
-                                context_size=(config.CONTEXT_LEFT, config.CONTEXT_RIGHT)
+                                context_size=(
+                                    config_audio.CONTEXT_LEFT,
+                                    config_audio.CONTEXT_RIGHT,
+                                )
                             )
                             transcriber = ctx.__enter__()
 
@@ -213,7 +217,7 @@ class AudioWorker(IngestionWorker):
 
                                 sentence_audio = np.concatenate(audio_chunk_holder)
 
-                                if config.DEBUG_AUDIO:
+                                if config_audio.DEBUG_AUDIO:
                                     self._debug_audio(session_id, sentence_audio)
 
                                 transcriber.add_audio(mx.array(sentence_audio))
@@ -297,7 +301,7 @@ class AudioWorker(IngestionWorker):
         with wave.open(debug_filename, "wb") as wf:
             wf.setnchannels(1)  # Mono
             wf.setsampwidth(2)  # 2 bytes = 16-bit
-            wf.setframerate(config.AUDIO_SAMPLE_RATE_HZ)
+            wf.setframerate(config_audio.AUDIO_SAMPLE_RATE_HZ)
             wf.writeframes(audio_int16.tobytes())
 
         print("[Debug] Saved audio chunk")
