@@ -12,3 +12,5 @@ __pycache__/
 *.db
 *.db-shm
 *.db-wal
+
+/tests/test_vision_tasks_legacy.txt
