@@ -120,6 +120,7 @@ class VisionWorker(IngestionWorker):
                 track_id not in self.active_identities
             ):  # new box; not previously tracked
                 self.active_identities[track_id] = {
+                    "user_id": config.DEFAULT_ID,
                     "name": config.DEFAULT_NAME,
                     "score": 0.0,
                     "checked_ts": 0,
@@ -135,17 +136,19 @@ class VisionWorker(IngestionWorker):
 
             # only do cosine sim if we don't know them or it's been a while since we last checked
             should_recognize = (
-                identity_data["name"] == config.DEFAULT_NAME
+                identity_data["user_id"] == config.DEFAULT_ID
                 or (now - identity_data["checked_ts"]) > self.RECHECK_INTERVAL
             )
             if should_recognize:
                 emb = self.processor.extract_embedding(frame, face)
-                name, score = self.processor.identify_embedding(emb)
+                user_id, score = self.processor.identify_embedding(emb)
 
                 # if strongly looks like someone we know
                 if score > self.CONFIDENCE_THRESHOLD:
+                    name = self.processor.db.get_user_name(user_id)
                     self.active_identities[track_id].update(
                         {
+                            "user_id": user_id,
                             "name": name,
                             "score": score,
                             "checked_ts": now,
@@ -154,6 +157,7 @@ class VisionWorker(IngestionWorker):
                 else:  # still don't know
                     self.active_identities[track_id].update(
                         {
+                            "user_id": config.DEFAULT_ID,
                             "name": config.DEFAULT_NAME,  # don't recognize this guy, reset
                             "score": score,
                             "checked_ts": now,
@@ -165,6 +169,7 @@ class VisionWorker(IngestionWorker):
                 {
                     "track_id": track_id,
                     "bbox": (x1, y1, x2, y2),
+                    "user_id": self.active_identities[track_id]["user_id"],
                     "name": self.active_identities[track_id]["name"],
                     "score": self.active_identities[track_id]["score"],
                     "emb": emb,  # embedding is something only when we re-identify it; lower bandwidth
@@ -223,17 +228,19 @@ class VisionWorker(IngestionWorker):
                     else:
                         print("[Vision] Can't analyze context because buffer empty")
                 elif command.get("cmd") == "REGISTER_FACE":
-                    # Expected payload: {"cmd": "REGISTER_FACE", "track_id": number, "name": "whatever name", "emb": np.ndarray}
+                    # Expected payload: {"cmd": "REGISTER_FACE", "track_id": number, "user_id": "whatever user_id", "emb": np.ndarray}
                     track_id = command.get("track_id")
-                    name = command.get("name")
+                    user_id = command.get("user_id")
                     emb = command.get("emb")
-                    if track_id is not None and name and emb is not None:
-                        self.processor.register_identity(name, emb)
+                    if track_id is not None and user_id and emb is not None:
+                        self.processor.register_identity(user_id, emb)
+                        name = self.processor.db.get_user_name(user_id)
                         print(f"[Vision] Registered '{name}' using provided embedding.")
 
                         if track_id in self.active_identities:
                             self.active_identities[track_id].update(
                                 {
+                                    "user_id": user_id,
                                     "name": name,
                                     "score": 1.0,
                                     "checked_ts": time.time(),

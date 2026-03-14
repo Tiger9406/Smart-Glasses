@@ -59,8 +59,8 @@ class AudioWorker(IngestionWorker):
 
         # average their embeddings in indentify_speaker
         self.known_speakers = {
-            name: {"embedding": np.mean(embeddings, axis=0), "count": len(embeddings)}
-            for name, embeddings in speaker_embeddings.items()
+            user_id: {"embedding": np.mean(embeddings, axis=0), "count": len(embeddings)}
+            for user_id, embeddings in speaker_embeddings.items()
         }
 
         print(f"[AudioWorker] Loaded {len(self.known_speakers)} voice identities")
@@ -121,32 +121,32 @@ class AudioWorker(IngestionWorker):
     def cosine_sim(self, a, b):
         return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
-    def identify_speaker(self, embedding, last_speaker) -> str:
+    def identify_speaker(self, embedding, last_user_id) -> str:
         # optional so i can convert it to last speaker if it throws None
-        best_name = config.DEFAULT_NAME
+        best_uid = config.DEFAULT_ID
         best_score = self.similarity_threshold
 
-        if last_speaker != config.DEFAULT_NAME:
-            avg_emb_last_speaker = self.known_speakers[last_speaker]["embedding"]
+        if last_user_id != config.DEFAULT_ID:
+            avg_emb_last_speaker = self.known_speakers[last_user_id]["embedding"]
             similarity_last_speaker = self.cosine_sim(embedding, avg_emb_last_speaker)
             if similarity_last_speaker > self.similarity_threshold:
-                best_name = last_speaker
+                best_uid = last_user_id
                 best_score = similarity_last_speaker
 
-        for person, data in self.known_speakers.items():
+        for uid, data in self.known_speakers.items():
             similarity = self.cosine_sim(embedding, data["embedding"])
             if similarity > best_score:
                 best_score = similarity
-                best_name = person
+                best_uid = uid
 
-        return best_name
+        return best_uid
 
     def run(self):
         self.setup()
 
         audio_buffer = b""
         audio_chunk_holder = []  # this is for storing all chunks to voice recognize at end of sentence
-        last_speaker = config.DEFAULT_NAME
+        last_speaker = config.DEFAULT_ID 
 
         # session state
         session_id = None
@@ -239,7 +239,7 @@ class AudioWorker(IngestionWorker):
                                             "timestamp": time.time(),
                                             "final": True,
                                             "embedding": embedding,
-                                            "name": speaker,
+                                            "user_id": speaker,
                                         }
                                     )
                                 # close session
@@ -256,18 +256,18 @@ class AudioWorker(IngestionWorker):
             if ctx:
                 ctx.__exit__(None, None, None)
 
-    def register_identity(self, name, embedding):
-        curr_data = self.known_speakers.get(name, None)
-        self.db.save_voice_embedding(name, embedding)
+    def register_identity(self, user_id, embedding):
+        curr_data = self.known_speakers.get(user_id, None)
+        self.db.save_voice_embedding(user_id, embedding)
         if curr_data is None:
-            self.known_speakers[name] = {"embedding": embedding, "count": 1}
+            self.known_speakers[user_id] = {"embedding": embedding, "count": 1}
             return
         curr_embedding = curr_data.get("embedding", None)
         curr_count = curr_data.get("count", 0)
 
         if curr_embedding is not None and curr_count != 0:
             new_embedding = (curr_embedding * curr_count + embedding) / (curr_count + 1)
-            self.known_speakers[name] = {
+            self.known_speakers[user_id] = {
                 "embedding": new_embedding,
                 "count": curr_count + 1,
             }
@@ -277,12 +277,12 @@ class AudioWorker(IngestionWorker):
             try:
                 command = self.command_queue.get_nowait()
                 if command.get("cmd") == "REGISTER_VOICE":
-                    # Expected payload: {"cmd": "REGISTER_VOICE", "name": "whatever name", "embedding": np.ndarray}
-                    name = command.get("name")
+                    # Expected payload: {"cmd": "REGISTER_VOICE", "user_id": "whatever userid", "embedding": np.ndarray}
+                    user_id = command.get("user_id")
                     emb = command.get("embedding")
-                    if name and emb is not None:
-                        self.register_identity(name, emb)
-                        print(f"[Audio] Registered '{name}' using provided embedding.")
+                    if user_id and emb is not None:
+                        self.register_identity(user_id, emb)
+                        print(f"[Audio] Registered voice for id '{user_id}'")
                 else:
                     pass
             except Exception as e:

@@ -3,6 +3,7 @@ import threading
 import time
 
 import numpy as np
+import uuid
 
 from api.udp_receiver import udp_receiver_thread, udp_shutdown_event
 from core import config
@@ -18,11 +19,20 @@ def main():
     shared_mem = SharedMem()
     db = DatabaseManager()
     if config.START_WITH_SAMPLE_DATA:
+        sample_uuids = {}
         for name, emb_path in config.SAMPLE_FACE_EMBEDDING_PATHS.items():
-            db.save_face_embedding(name, np.load(emb_path))
+            if name not in sample_uuids:
+                sample_uuids[name] = str(uuid.uuid4())
+                db.create_user(sample_uuids[name], name)
+            db.save_face_embedding(sample_uuids[name], np.load(emb_path))
+            
+        # Load sample voices
         for name, emb_paths in config.SAMPLE_VOICE_EMBEDDING_PATHS.items():
+            if name not in sample_uuids:
+                sample_uuids[name] = str(uuid.uuid4())
+                db.create_user(sample_uuids[name], name)
             for emb_path in emb_paths:
-                db.save_voice_embedding(name, np.load(emb_path))
+                db.save_voice_embedding(sample_uuids[name], np.load(emb_path))
 
     brain = Coordinator(
         shared_mem.results_queue,
