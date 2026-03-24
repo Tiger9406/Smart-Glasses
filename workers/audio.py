@@ -38,6 +38,8 @@ class AudioWorker(IngestionWorker):
         self.padding_chunks = int(320 / chunk_ms)  # how many chunks make up 320ms
         self.chunk_duration_sec = chunk_ms / 1000.0
 
+        self.audio_writer = None
+
         print("[AudioWorker] Loading Redimnet model...")
         self.redimnet_session = ort.InferenceSession(config_audio.REDIMNET_PATH)
 
@@ -167,6 +169,12 @@ class AudioWorker(IngestionWorker):
                 except Exception as E:
                     print("[AudioWorker] Error: ", E)
                     raise RuntimeError
+                
+                if getattr(config_audio, "SAVE_AUDIO_STREAM", False) and self.audio_writer is None:
+                    self._init_audio_writer()
+
+                if self.audio_writer:
+                    self.audio_writer.writeframes(raw_bytes)
 
                 audio_buffer += raw_bytes
 
@@ -255,6 +263,9 @@ class AudioWorker(IngestionWorker):
         finally:
             if ctx:
                 ctx.__exit__(None, None, None)
+            if hasattr(self, "audio_writer") and self.audio_writer:
+                self.audio_writer.close()
+                print("[AudioWorker] AudioWriter released")
 
     def register_identity(self, user_id, embedding):
         curr_data = self.known_speakers.get(user_id, None)
@@ -304,3 +315,16 @@ class AudioWorker(IngestionWorker):
             wf.writeframes(audio_int16.tobytes())
 
         print("[Debug] Saved audio chunk")
+
+    def _init_audio_writer(self):
+        output_path = getattr(config_audio, 'RECORDED_AUDIO_PATH', 'api/simulator_resources/recorded_audio.wav')
+        output_dir = os.path.dirname(output_path)
+        
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+
+        self.audio_writer = wave.open(output_path, "wb")
+        self.audio_writer.setnchannels(1)  # Mono
+        self.audio_writer.setsampwidth(2)  # 2 bytes = 16-bit
+        self.audio_writer.setframerate(config_audio.AUDIO_SAMPLE_RATE_HZ)
+        print(f"[AudioWorker] AudioWriter initialized: {output_path}")
