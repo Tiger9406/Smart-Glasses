@@ -14,3 +14,5 @@ SILENT_CHUNK_THRESHOLD = 1  #how many chunks of audio_chunk_size silent to consi
 
 # voice diartization
 SIMILARITY_THRESHOLD = 0.30
+
+SAVE_AUDIO_STREAM = True
