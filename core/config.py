@@ -12,7 +12,7 @@ TEST_REGISTER_IDENTITY = False
 START_WITH_SAMPLE_DATA = True
 SAMPLE_FACE_EMBEDDING_PATHS = {}
 SAMPLE_VOICE_EMBEDDING_PATHS = {
-    "Tiger": ["database/sample_data/voice_Tiger1.npy"],
+    "Tiger": ["database/sample_data/voice_Tiger1.npy", "database/sample_data/voice_Tiger2.npy"],
 }
 
 RESOLUTION = [640, 480]
