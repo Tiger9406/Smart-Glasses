@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-FPS = 15
+FPS = 10
 DEFAULT_ISF_MODEL = os.getenv("DEFAULT_ISF_MODEL", "Megatron")
 MEGATRON_MODEL_PATH = os.getenv("MEGATRON_MODEL_PATH", "")
 PIKACHU_MODEL_PATH = os.getenv("PIKACHU_MODEL_PATH", "")
