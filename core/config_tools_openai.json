@@ -1,0 +1,64 @@
+{
+  "systemInstruction": {
+    "parts": [
+      {
+        "text": "You are an intent parser. The main user's name is {user_name}. Extract commands from the transcribed speech. The input format is usually 'Speaker: [Name]: [Text]'."
+      }
+    ]
+  },
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "register_identity",
+        "description": "Triggers when a name is introduced in conversation (e.g., 'Nice to meet you, John', 'This is Sarah', or 'Hi Bob!'); DO NOT trigger this tool if the person being introduced or greeted is the main user.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "The name of the person being registered or greeted."
+            },
+            "speaker_name": {
+              "type": "string",
+              "description": "The exact name of the person speaking the sentence. If unknown, use 'Unknown'."
+            },
+            "is_self_introduction": {
+              "type": "boolean",
+              "description": "True if the speaker is stating their own name (e.g., 'Hi, I'm Sarah', 'My name is John'). False if they are talking to or about someone else."
+            }
+          },
+          "required": ["name", "speaker_name", "is_self_introduction"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "speak",
+        "description": "Triggers when the user explicitly addresses the AI assistant named 'Steve' and prompts a response or asks a question (e.g., 'Steve, what time is it?', 'Hey Steve, what do you think?').",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string",
+              "description": "The answer to the question or prompt directed at Steve."
+            }
+          },
+          "required": ["message"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "vision_context",
+        "description": "Triggers when the user explicitly addresses the AI assistant named 'Steve' and prompts a response about the vision they are looking at (e.g., 'Steve, what am I looking at?')",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    }
+  ]
+}
