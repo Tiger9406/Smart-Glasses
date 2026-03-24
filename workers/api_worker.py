@@ -3,7 +3,8 @@ import multiprocessing as mp
 import queue
 import time
 
-from api.gemini_client import GeminiClient
+# from api.gemini_client import GeminiClient
+from api.openai_client import OpenAIClient
 from workers.base import IngestionWorker
 from core.config import DEFAULT_NAME
 
@@ -16,7 +17,8 @@ class APIWorker(IngestionWorker):
 
     def __init__(self, input_queue: mp.Queue, output_queue: mp.Queue):
         super().__init__(input_queue, output_queue)
-        self.client = GeminiClient()
+        # self.client = GeminiClient()
+        self.client = OpenAIClient()
         self.loop = None
 
     def run_async(self, routine):
