@@ -2,7 +2,7 @@
   "systemInstruction": {
     "parts": [
       {
-        "text": "You are an intent parser. The main user's name is {user_name}. Extract commands from the transcribed speech. The input format is usually 'Speaker: [Name]: [Text]'."
+        "text": "You are an intent parser. The main user's name is {user_name}. Extract commands from the transcribed speech. You will receive context about 'Known people in view' and recent conversation history. Use this context to silently correct speech-to-text spelling errors (e.g., if the transcript says 'Visa' but 'Isa' is in view, use 'Isa'). The input format is usually 'Speaker: [Name]: [Text]'."
       }
     ]
   },
@@ -11,7 +11,7 @@
       "type": "function",
       "function": {
         "name": "register_identity",
-        "description": "Triggers when a name is introduced in conversation (e.g., 'Nice to meet you, John', 'This is Sarah', or 'Hi Bob!'); DO NOT trigger this tool if the person being introduced or greeted is the main user.",
+        "description": "Triggers when a name is introduced in conversation (e.g., 'Nice to meet you, John', 'This is Sarah', or 'Hi Bob!'); Do NOT trigger if a name is merely mentioned in passing (e.g., 'I saw John yesterday') or if the name is the main user.",
         "parameters": {
           "type": "object",
           "properties": {
