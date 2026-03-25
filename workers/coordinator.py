@@ -120,6 +120,14 @@ class Coordinator(BaseWorker):
             else config.DEFAULT_NAME
         )
 
+        # check if theres speech and we recognize user.
+        if text and user_id != config.DEFAULT_ID:
+            transcript = f"{speaker_name}: {text}"
+            self.db.save_chat_history(user_id, transcript)
+            print("[Coordinater]: Saved transcript in DB")
+        else:
+            transcript = f"{speaker_name}: {text}"
+
         active_names = set()
         if self.vision_cache:
             _, faces = self.vision_cache[-1]  # Most recent frame
@@ -128,7 +136,7 @@ class Coordinator(BaseWorker):
                 if uid != config.DEFAULT_ID:
                     active_names.add(self.db.get_user_name(uid))
 
-        current_message = f"{speaker_name}: {text}"
+        current_message = transcript
         self.conversation_history.append(current_message)
 
         # NEW: Compile the history into a single string
