@@ -104,3 +104,13 @@ Commands sent to `APIWorker`:
 - `ANALYZE_MEMORY`
   - Payload: `{"cmd":"ANALYZE_MEMORY","conversation_history":str,"known_facts":str,"subject":str}`
   - Result event: `memory_result`
+
+### 7. API Error
+
+When there is an error with any api call
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `type` | `string` | Always `"api_error"` |
+| `error` | `string` | The error in string format |
+| `timestamp` | `time` | Time stamp when error happened.|

@@ -46,7 +46,6 @@ class Coordinator(BaseWorker):
         )
 
         self.sample_embeddings = {}
-        self.registered_tracks = set()
         if config.TEST_REGISTER_IDENTITY and config.SAMPLE_FACE_EMBEDDING_PATHS:
             self.sample_embeddings = {
                 name: np.load(path)
@@ -94,14 +93,15 @@ class Coordinator(BaseWorker):
             )  # if known uuid we get a name otherwise unknown
 
             text = event.get("text", "")
-            timestamp = event.get("speech_start_time", time.time())
+            timestamp = event.get("time_start", time.time())
             voice_embedding = event.get("embedding")
 
             if user_id == config.DEFAULT_ID and self.pending_voice_registration:
                 time_since_reg = (
                     timestamp - self.pending_voice_registration["timestamp"]
                 )
-                if time_since_reg < 8.0:
+
+                if time_since_reg < config.VOICE_TRAP_LIMIT:
                     target_id = self.pending_voice_registration["user_id"]
                     target_name = self.db.get_user_name(target_id)
                     print(
@@ -133,7 +133,7 @@ class Coordinator(BaseWorker):
 
         elif event_type == "intent":
             command = event.get("cmd", "CHAT")
-            args = event.get("args", [])
+            args = event.get("args", {})
 
             timestamp = event.get("timestamp", time.time())
             voice_embedding = event.get("voice_embedding")
@@ -291,6 +291,7 @@ class Coordinator(BaseWorker):
                     print(f"[Coordinator]: [STEVE]: {message}")
             elif command == "VISION_CONTEXT":
                 prompt = args.get("prompt", "Summarize the video in a sentence")
+                self.request_number += 1
                 self.vision_commands_queue.put_nowait(
                     {
                         "cmd": "GET_VIDEO_CONTEXT",
