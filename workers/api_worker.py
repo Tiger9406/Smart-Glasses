@@ -5,6 +5,7 @@ import time
 
 from api.gemini_client import GeminiClient
 from workers.base import IngestionWorker
+from core.config import DEFAULT_NAME
 
 
 class APIWorker(IngestionWorker):
@@ -88,7 +89,7 @@ class APIWorker(IngestionWorker):
         if cmd == "ANALYZE_MEMORY":
             conversation_history = command.get("conversation_history", "")
             known_facts = command.get("known_facts", "None")
-            subject = command.get("subject", "Unknown")
+            subject = command.get("subject", DEFAULT_NAME)
 
             if not conversation_history:
                 return

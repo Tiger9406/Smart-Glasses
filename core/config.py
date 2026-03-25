@@ -15,3 +15,5 @@ SAMPLE_VOICE_EMBEDDING_PATHS = {
 }
 
 IDENTITY_DB_PATH = "./database/identities.db"
+
+VOICE_TRAP_LIMIT = 15.0
