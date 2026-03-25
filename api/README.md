@@ -4,10 +4,6 @@ This directory handles the networking of the smartglasses backend. It's responsi
 
 ## Components
 
-### `routes.py`
-Defines the FastAPI endpoints. 
-- **`/stream` (WebSocket):** The primary ingestion route. It accepts continuous frames, reads the header byte to determine the payload type (Audio vs. Vision), and places the payload into the respective `multiprocessing.Queue`
-
 ### `simulator.py`
 Simulates physical smartglasses hardware
 - Reads local video (`.mp4`) and audio (`.wav`) files

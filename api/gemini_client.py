@@ -3,23 +3,34 @@ import json
 
 import aiohttp
 
-from core import config
+from core import config_gemini
+from core.config import USER_NAME
 
 
 class GeminiClient:
     def __init__(self, timeout_seconds=20):
-        self.api_key = config.GEMINI_API_KEY
-        self.url = config.GEMINI_API_LINK
-        self.max_output_tokens = config.MAXOUTPUTTOKENS
-        self.temperature = config.TEMPERATURE
+        self.active = config_gemini.USE_LLM
+        self.api_key = config_gemini.GEMINI_API_KEY
+        self.url = config_gemini.GEMINI_API_LINK
+        self.max_output_tokens = config_gemini.MAXOUTPUTTOKENS
+        self.temperature = config_gemini.TEMPERATURE
 
-        self.user_name = config.USER_NAME
+        self.user_name = USER_NAME
 
         self.timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._session = None
-        with open(config.TOOLS_JSON_PATH, "r") as f:
-            self.tools_config = json.load(f)
-        with open(config.PROMPT_JSON_PATH, "r") as f:
+
+        with open(config_gemini.TOOLS_JSON_PATH, "r") as f:
+            tools_config = json.load(f)
+        self.sys_instruct = tools_config.get("systemInstruction", "")
+        if self.sys_instruct and "parts" in self.sys_instruct:
+            base_text = self.sys_instruct["parts"][0]["text"]
+            self.sys_instruct["parts"][0]["text"] = base_text.format(
+                user_name=self.user_name
+            )
+        self.tools = tools_config.get("tools")
+
+        with open(config_gemini.PROMPT_JSON_PATH, "r") as f:
             self.prompt_config = json.load(f)
 
     async def _get_session(self) -> aiohttp.ClientSession:
@@ -40,7 +51,8 @@ class GeminiClient:
         Encode frames & send to gemini via http
         return text response or raises exception
         """
-
+        if not self.active:
+            return
         if not self.api_key:
             raise ValueError("API Key not configured")
 
@@ -73,6 +85,8 @@ class GeminiClient:
     async def analyze_memory(
         self, conversation_history: str, known_facts: str = "None"
     ):
+        if not self.active:
+            return
         if not self.api_key:
             raise ValueError("API Key not configured")
 
@@ -105,14 +119,15 @@ class GeminiClient:
         return extracted_data
 
     async def parse_intent(self, prompt: str) -> str:
-
+        if not self.active:
+            return
         if not self.api_key:
             raise ValueError("API Key not configured")
 
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
-            "systemInstruction": self.tools_config.get("systemInstruction"),
-            "tools": self.tools_config.get("tools"),
+            "systemInstruction": self.sys_instruct,
+            "tools": self.tools,
             "generationConfig": {
                 "maxOutputTokens": self.max_output_tokens,
                 "temperature": self.temperature,
@@ -176,7 +191,10 @@ class GeminiClient:
                 return []
         elif response_type == "INTENT":
             try:
-                part = candidate.get("content", {}).get("parts", [])[0]
+                parts = candidate.get("content", {}).get("parts", [])
+                if not parts:
+                    return None
+                part = parts[0]
                 if "functionCall" in part:
                     func_call = part["functionCall"]
                     return {
@@ -191,3 +209,5 @@ class GeminiClient:
                 raise ValueError(
                     f"Valid finishReason but missing text content. Response: {result}"
                 )
+        elif response_type == "VISION_CONTEXT":
+            return {"cmd": "VISION_CONTEXT"}

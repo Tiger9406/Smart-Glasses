@@ -1,0 +1,59 @@
+{
+  "systemInstruction": {
+    "parts": [
+      {
+        "text": "You are an intent parser. The main user's name is {user_name}. Extract commands from the transcribed speech. The input format is usually 'Speaker: [Name]: [Text]'."
+      }
+    ]
+  },
+  "tools": [
+    {
+      "functionDeclarations": [
+        {
+          "name": "register_identity",
+          "description": "Triggers when a name is introduced in conversation (e.g., 'Nice to meet you, John', 'This is Sarah', or 'Hi Bob!'",
+          "parameters": {
+            "type": "OBJECT",
+            "properties": {
+              "name": {
+                "type": "STRING",
+                "description": "The name of the person being registered or greeted."
+              },
+              "speaker_name": {
+                "type": "STRING",
+                "description": "The exact name of the person speaking the sentence. If unknown, use 'Unknown'."
+              },
+              "is_self_introduction": {
+                "type": "BOOLEAN",
+                "description": "True if the speaker is stating their own name (e.g., 'Hi, I'm Sarah', 'My name is John'). False if they are talking to or about someone else."
+              }
+            },
+            "required": ["name", "speaker_name", "is_self_introduction"]
+          }
+        },
+        {
+          "name": "speak",
+          "description": "Triggers when the user explicitly addresses the AI assistant named 'Steve' and prompts a response or asks a question (e.g., 'Steve, what time is it?', 'Hey Steve, what do you think?').",
+          "parameters": {
+            "type": "OBJECT",
+            "properties": {
+              "message": {
+                "type": "STRING",
+                "description": "The answer to the question or prompt directed at Steve."
+              }
+            },
+            "required": ["message"]
+          }
+        },
+        {
+          "name": "vision_context",
+          "description": "Triggers when the user explicitly addresses the AI assistant named 'Steve' and prompts a response about the vision they are looking at (e.g., 'Steve, what am I looking at?')",
+          "parameters": {
+            "type": "OBJECT",
+            "properties": {}
+          }
+        }
+      ]
+    }
+  ]
+}

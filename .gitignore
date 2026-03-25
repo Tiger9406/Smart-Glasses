@@ -5,9 +5,10 @@ docker_legacy/
 __pycache__/
 .DS_Store
 
-*.mov
 /api/video_converter.py
-/api/simulator_resources/annotated_video.mp4
+/api/simulator_resources/annotated*
+
+/tests/test_vision_tasks_legacy.txt
 
 *.db
 *.db-shm
