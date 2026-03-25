@@ -103,14 +103,26 @@ class Coordinator(BaseWorker):
 
         if user_id == config.DEFAULT_ID and voice_embedding is not None:
             self._update_audio_cache(timestamp, voice_embedding)
-            resolved = self._check_pending_voice_registration(timestamp, voice_embedding)
+            resolved_id = self._check_pending_voice_registration(
+                timestamp, voice_embedding
+            )
 
-            if not resolved:
-                self._try_visual_voice_association(timestamp, voice_embedding)
+            if not resolved_id:
+                resolved_id = self._try_visual_voice_association(
+                    timestamp, voice_embedding
+                )
+            if resolved_id:
+                user_id = resolved_id
+
+        speaker_name = (
+            self.db.get_user_name(user_id)
+            if user_id != config.DEFAULT_ID
+            else config.DEFAULT_NAME
+        )
 
         active_names = set()
         if self.vision_cache:
-            _, faces = self.vision_cache[-1] # Most recent frame
+            _, faces = self.vision_cache[-1]  # Most recent frame
             for face in faces:
                 uid = face.get("user_id", config.DEFAULT_ID)
                 if uid != config.DEFAULT_ID:
@@ -118,12 +130,14 @@ class Coordinator(BaseWorker):
 
         current_message = f"{speaker_name}: {text}"
         self.conversation_history.append(current_message)
-        
+
         # NEW: Compile the history into a single string
         history_text = "\n".join(self.conversation_history)
 
         # NEW: Build a comprehensive prompt
-        vision_context = f"Known people in view: {list(active_names)}\n" if active_names else ""
+        vision_context = (
+            f"Known people in view: {list(active_names)}\n" if active_names else ""
+        )
         prompt = (
             f"{vision_context}"
             f"Transcript:\n{history_text}\n\n"
@@ -176,7 +190,7 @@ class Coordinator(BaseWorker):
         Handles when trap set to register next unknown speaker
         """
         if not self.pending_voice_registration:
-            return False
+            return None
 
         time_since_reg = timestamp - self.pending_voice_registration["timestamp"]
         if 0 <= time_since_reg < self.max_delay:
@@ -194,8 +208,8 @@ class Coordinator(BaseWorker):
                 }
             )
             self.pending_voice_registration = None
-            return True
-        return False
+            return target_id
+        return None
 
     def _register_identity(self, args, timestamp, voice_embedding):
         """
@@ -447,7 +461,8 @@ class Coordinator(BaseWorker):
         # Define a time window around the speech (e.g., +/- 1.0 second)
         window_size = 1.0
         frames_in_window = [
-            faces for frame_time, faces in self.vision_cache
+            faces
+            for frame_time, faces in self.vision_cache
             if abs(frame_time - timestamp) <= window_size
         ]
 
@@ -464,9 +479,9 @@ class Coordinator(BaseWorker):
                 uid = face.get("user_id", config.DEFAULT_ID)
                 if uid == config.DEFAULT_ID:
                     continue
-                
+
                 presence_counts[uid] = presence_counts.get(uid, 0) + 1
-                
+
                 if face.get("is_speaking", False):
                     speaker_counts[uid] = speaker_counts.get(uid, 0) + 1
 
@@ -488,13 +503,17 @@ class Coordinator(BaseWorker):
 
         if target_id:
             target_name = self.db.get_user_name(target_id)
-            print(f"[Coordinator] Visually associated voice with {target_name} across {total_frames} frames.")
-            
-            self.audio_commands_queue.put_nowait({
-                "cmd": "REGISTER_VOICE",
-                "user_id": target_id,
-                "embedding": voice_embedding,
-            })
-            return True
+            print(
+                f"[Coordinator] Visually associated voice with {target_name} across {total_frames} frames."
+            )
 
-        return False
+            self.audio_commands_queue.put_nowait(
+                {
+                    "cmd": "REGISTER_VOICE",
+                    "user_id": target_id,
+                    "embedding": voice_embedding,
+                }
+            )
+            return target_id
+
+        return None
