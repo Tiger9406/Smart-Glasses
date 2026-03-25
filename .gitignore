@@ -13,3 +13,12 @@ __pycache__/
 *.db
 *.db-shm
 *.db-wal
+
+/api/simulator_resources/recorded_audio.wav
+/api/simulator_resources/frames.mp4
+/api/simulator_resources/riley_annotated.mp4
+/api/simulator_resources/shrish_annotated.mp4
+/api/simulator_resources/riley_self_intro.mp4
+/api/simulator_resources/shrip_annotated.mp4
+/api/simulator_resources/shrish_introduced.mp4
+/api/simulator_resources/video_slower.py
