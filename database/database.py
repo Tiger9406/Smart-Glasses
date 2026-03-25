@@ -42,11 +42,11 @@ class DatabaseManager:
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
-            # name can be not unique; might have some bugs there
+            # id to name; id will be uuid so string
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL
                 )
             """)
 
@@ -54,7 +54,7 @@ class DatabaseManager:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS face_embeddings (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
+                    user_id TEXT NOT NULL,
                     embedding ARRAY NOT NULL,
                     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
                 )
@@ -64,7 +64,7 @@ class DatabaseManager:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS voice_embeddings (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
+                    user_id TEXT NOT NULL,
                     embedding ARRAY NOT NULL,
                     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
                 )
@@ -74,7 +74,7 @@ class DatabaseManager:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS chat_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
+                    user_id TEXT NOT NULL,
                     transcript TEXT NOT NULL,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
@@ -93,27 +93,52 @@ class DatabaseManager:
 
             conn.commit()
 
-    def delete_user(self, name: str):
+    def delete_user(self, user_id: str):
         """deleting user"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM users WHERE name = ?", (name,))
+            cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
             conn.commit()
 
-    def _get_or_create_user(self, name: str) -> int:
-        """Return user id if exist; otherwise create"""
+    def create_user(self, user_id: str, name: str):
+        """create user"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-
-            cursor.execute("INSERT OR IGNORE INTO users (name) VALUES (?)", (name,))
+            cursor.execute(
+                """
+                INSERT INTO users (id, name) VALUES (?, ?)
+                ON CONFLICT(id) DO UPDATE SET name=excluded.name
+            """,
+                (user_id, name),
+            )
             conn.commit()
 
-            cursor.execute("SELECT id FROM users WHERE name = ?", (name,))
-            return cursor.fetchone()[0]
+    def update_user(self, user_id: str, new_name: str):
+        """update user name"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE users SET name = ? WHERE id = ?", (new_name, user_id)
+            )
+            conn.commit()
 
-    def save_face_embedding(self, name: str, embedding: np.ndarray):
-        """Save new face embedding"""
-        user_id = self._get_or_create_user(name)
+    def get_user_name(self, user_id: str) -> str:
+        """fetch ame for a given UUID"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM users WHERE id = ?", (user_id,))
+            row = cursor.fetchone()
+            return row[0] if row else "Unknown"
+
+    def get_all_users(self) -> dict:
+        """Returns a dictionary mapping user_id -> name"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, name FROM users")
+            return dict(cursor.fetchall())
+
+    def save_face_embedding(self, user_id: str, embedding: np.ndarray):
+        """Save new face embedding linked to UUID"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -122,9 +147,8 @@ class DatabaseManager:
             )
             conn.commit()
 
-    def save_voice_embedding(self, name: str, embedding: np.ndarray):
-        """Save new voice embedding"""
-        user_id = self._get_or_create_user(name)
+    def save_voice_embedding(self, user_id: str, embedding: np.ndarray):
+        """Save new voice embedding linked to UUID"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -134,39 +158,30 @@ class DatabaseManager:
             conn.commit()
 
     def get_all_faces(self) -> dict:
-        """return dict mapping: user to faces"""
+        """return dict mapping: user_id to faces"""
         faces_dict = {}
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT u.name, f.embedding 
-                FROM users u 
-                JOIN face_embeddings f ON u.id = f.user_id
-            """)
-            for name, emb in cursor.fetchall():
-                if name not in faces_dict:
-                    faces_dict[name] = []
-                faces_dict[name].append(emb)
+            cursor.execute("SELECT user_id, embedding FROM face_embeddings")
+            for uid, emb in cursor.fetchall():
+                if uid not in faces_dict:
+                    faces_dict[uid] = []
+                faces_dict[uid].append(emb)
         return faces_dict
 
     def get_all_voices(self) -> dict:
-        """dict of voice embeddings"""
+        """dict of voice embeddings mapped by user_id"""
         voices_dict = {}
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT u.name, v.embedding 
-                FROM users u 
-                JOIN voice_embeddings v ON u.id = v.user_id
-            """)
-            for name, emb in cursor.fetchall():
-                if name not in voices_dict:
-                    voices_dict[name] = []
-                voices_dict[name].append(emb)
+            cursor.execute("SELECT user_id, embedding FROM voice_embeddings")
+            for uid, emb in cursor.fetchall():
+                if uid not in voices_dict:
+                    voices_dict[uid] = []
+                voices_dict[uid].append(emb)
         return voices_dict
 
-    def save_chat_history(self, name: str, transcript: str):
-        user_id = self._get_or_create_user(name)
+    def save_chat_history(self, user_id: str, transcript: str):
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -175,23 +190,34 @@ class DatabaseManager:
             )
             conn.commit()
 
-    def get_chat_history(self, name: str, limit: int = 10) -> list:
+    def get_chat_history(self, user_id: str, limit: int = 10) -> list:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
                 SELECT transcript, timestamp 
-                FROM chat_history h
-                JOIN users u ON h.user_id = u.id
-                WHERE u.name = ?
-                ORDER BY h.id DESC
+                FROM chat_history 
+                WHERE user_id = ?
+                ORDER BY id DESC
                 LIMIT ?
             """,
-                (name, limit),
+                (user_id, limit),
             )
-
-            # return list of tuples: [("transcript stuff"), timestamp]
             return cursor.fetchall()
+    
+    def get_user_ids_by_name(self, name: str):
+        """Returns the UUID for a given name, or None if not found."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM users WHERE name = ?", (name,))
+            return [row[0] for row in cursor.fetchall()]
+        
+    def get_voice_embeddings_by_uid(self, user_id: str):
+        """returns a list of voice embeddings for a given UUID"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT embedding FROM voice_embeddings WHERE user_id = ?", (user_id,))
+            return [emb for (emb,) in cursor.fetchall()]
 
     def clear_db(self):
         with self._get_connection() as conn:

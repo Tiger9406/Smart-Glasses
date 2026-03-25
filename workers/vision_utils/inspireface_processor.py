@@ -2,8 +2,7 @@ import inspireface as isf
 import numpy as np
 from inspireface import FaceInformation
 
-from core import config
-from core import config_vision
+from core import config, config_vision
 from database.database import DatabaseManager
 
 
@@ -61,21 +60,16 @@ class InspireFaceProcessor:
         self.session.set_detection_confidence_threshold(confidence_threshold)
         print("[Vision] InspireFace Model initialized")
 
-    def register_identity(self, name: str, embedding: np.ndarray):
-        if embedding is None:
-            print(f"[Vision][Identity] Failed to register '{name}': embedding is None")
+    def register_identity(self, user_id: str, embedding: np.ndarray):
+        if embedding is None or not isinstance(embedding, np.ndarray):
+            print("[Vision][Identity] Failed to register: embedding invalid")
             return
-        if not isinstance(embedding, np.ndarray):
-            print(
-                f"[Vision][Identity] Failed to register '{name}': embedding is is not np array"
-            )
-            return
-        if name not in self.known_faces:
-            self.known_faces[name] = []
+        if user_id not in self.known_faces:
+            self.known_faces[user_id] = []
 
-        self.known_faces[name].append(embedding)
-        self.db.save_face_embedding(name, embedding)
-        print(f"[Vision] Saved new face embedding for '{name}' to database.")
+        self.known_faces[user_id].append(embedding)
+        self.db.save_face_embedding(user_id, embedding)
+        print(f"[Vision] Saved new face embedding for '{user_id}' to database.")
 
     def detect_faces(self, image: np.ndarray):
         return self.session.face_detection(image)
@@ -83,28 +77,30 @@ class InspireFaceProcessor:
     def extract_embedding(self, image: np.ndarray, face_obj: FaceInformation):
         return self.session.face_feature_extract(image, face_obj)
 
-    def compare_to_person(self, name: str, embedding: np.ndarray):
-        if name not in self.known_faces:
+    def compare_to_person(self, user_id: str, embedding: np.ndarray):
+        if user_id not in self.known_faces:
             return 0.0
 
         best_comp = 0.0
-        for known_features in self.known_faces[name]:
+        for known_features in self.known_faces[user_id]:
             score = isf.feature_comparison(embedding, known_features)
             best_comp = max(best_comp, score)
         return best_comp
 
     def identify_embedding(
-        self, embedding: np.ndarray, threshold=config_vision.CONFIDENCE_THRESHOLD_MATCHING
+        self,
+        embedding: np.ndarray,
+        threshold=config_vision.CONFIDENCE_THRESHOLD_MATCHING,
     ):
         # given embedding, compare to known faces and return best match name and according score
         best_score = 0.0
-        best_match = config.DEFAULT_NAME
+        best_match = config.DEFAULT_ID
 
         if self.known_faces:
-            for name, _ in self.known_faces.items():
-                score = self.compare_to_person(name, embedding)
+            for user_id, _ in self.known_faces.items():
+                score = self.compare_to_person(user_id, embedding)
                 if score > threshold and score > best_score:
                     best_score = score
-                    best_match = name
+                    best_match = user_id
 
         return best_match, best_score

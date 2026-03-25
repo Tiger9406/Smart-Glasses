@@ -6,6 +6,7 @@ HEADER_AUDIO = b"\x02"
 
 USER_NAME = "Tiger"
 DEFAULT_NAME = "Unknown"
+DEFAULT_ID = "unknown"
 
 TEST_REGISTER_IDENTITY = False
 START_WITH_SAMPLE_DATA = True
@@ -14,6 +15,7 @@ SAMPLE_VOICE_EMBEDDING_PATHS = {
     "Tiger": ["database/sample_data/voice_Tiger1.npy"],
 }
 
+RESOLUTION = [640, 480]
 IDENTITY_DB_PATH = "./database/identities.db"
 
 VOICE_TRAP_LIMIT = 15.0

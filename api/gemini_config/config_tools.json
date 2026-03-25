@@ -11,7 +11,7 @@
       "functionDeclarations": [
         {
           "name": "register_identity",
-          "description": "Triggers when a name is introduced in conversation (e.g., 'Nice to meet you, John', 'This is Sarah', or 'Hi Bob!'",
+          "description": "Triggers when a name is introduced in conversation (e.g., 'Nice to meet you, John', 'This is Sarah', or 'Hi Bob!'); DO NOT trigger this tool if the person being introduced or greeted is the main user.",
           "parameters": {
             "type": "OBJECT",
             "properties": {
