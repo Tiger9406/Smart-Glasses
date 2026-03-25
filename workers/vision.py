@@ -71,8 +71,9 @@ class VisionWorker(IngestionWorker):
                     raw_bytes = self.input_queue.get(timeout=0.01)
                 except queue.Empty:
                     continue
+                current_time = time.time()
 
-                self.frame_buffer.append((time.time(), raw_bytes))
+                self.frame_buffer.append((current_time, raw_bytes))
 
                 frame = cv2.imdecode(
                     np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR
@@ -83,14 +84,14 @@ class VisionWorker(IngestionWorker):
                 faces_result = self._facial_loop(frame)
 
                 # for testing purposes: if we wanna see bounding box behavior
-                if config_vision.SAVE_ANNOTATED_VID:
-                    self.frame_archive.append((raw_bytes, faces_result))
+                if config.SAVE_ANNOTATED_VID:
+                    self.frame_archive.append((current_time, raw_bytes, faces_result))
 
         finally:
             print("[Vision] Releasing resources")
             if hasattr(self, "processor") and self.processor.session:
                 self.processor.session.release()
-            if config_vision.SAVE_ANNOTATED_VID and self.frame_archive:
+            if config.SAVE_ANNOTATED_VID and self.frame_archive:
                 self._render_video_offline()
                 print("[Vision] VideoWriter released")
 
@@ -208,21 +209,24 @@ class VisionWorker(IngestionWorker):
         if not self.frame_archive:
             return
 
-        # Initialize video writer using the first archived frame
-        first_raw, _ = self.frame_archive[0]
+        first_time, first_raw, _ = self.frame_archive[0]
         first_frame = cv2.imdecode(np.frombuffer(first_raw, np.uint8), cv2.IMREAD_COLOR)
         self._init_video_writer(first_frame)
 
-        # Process all archived frames
-        for raw_bytes, faces_data in self.frame_archive:
+        frame_duration = 1.0 / config_vision.FPS
+        expected_time = first_time
+
+        for timestamp, raw_bytes, faces_data in self.frame_archive:
             frame = cv2.imdecode(np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR)
             
-            # # Draw labels
-            # for face in faces_data:
-            #     label_text = f"{face['name']} (ID: {face['track_id']})"
-            #     self._draw_face_label(frame, face['bbox'], label_text)
+            for face in faces_data:
+                label_text = f"{face['name']} (ID: {face['track_id']})"
+                self._draw_face_label(frame, face['bbox'], label_text)
             
-            self.video_writer.write(frame)
+            # Write the frame at least once, and duplicate if we missed the previous expected slot(s)
+            while expected_time <= timestamp:
+                self.video_writer.write(frame)
+                expected_time += frame_duration
 
         if self.video_writer:
             self.video_writer.release()
@@ -297,7 +301,7 @@ class VisionWorker(IngestionWorker):
     def _init_video_writer(
         self,
         frame,
-        output_path=config_vision.ANNOTATED_OUTPUT_PATH,
+        output_path=config.VIDEO_OUTPUT_PATH,
         fps=config_vision.FPS,
     ):
         """initialize VideoWriter based on the first frame's dimensions"""

@@ -170,7 +170,7 @@ class AudioWorker(IngestionWorker):
                     print("[AudioWorker] Error: ", E)
                     raise RuntimeError
                 
-                if getattr(config_audio, "SAVE_AUDIO_STREAM", False) and self.audio_writer is None:
+                if config.SAVE_ANNOTATED_VID and self.audio_writer is None:
                     self._init_audio_writer()
 
                 if self.audio_writer:
@@ -317,7 +317,8 @@ class AudioWorker(IngestionWorker):
         print("[Debug] Saved audio chunk")
 
     def _init_audio_writer(self):
-        output_path = getattr(config_audio, 'RECORDED_AUDIO_PATH', 'api/simulator_resources/recorded_audio.wav')
+
+        output_path = config.AUDIO_OUTPUT_PATH
         output_dir = os.path.dirname(output_path)
         
         if output_dir and not os.path.exists(output_dir):

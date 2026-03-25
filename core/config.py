@@ -15,6 +15,11 @@ SAMPLE_VOICE_EMBEDDING_PATHS = {
     "Tiger": ["database/sample_data/voice_Tiger1.npy", "database/sample_data/voice_Tiger2.npy"],
 }
 
+SAVE_ANNOTATED_VID = True
+VIDEO_OUTPUT_PATH = "./api/simulator_resources/frames.mp4"
+AUDIO_OUTPUT_PATH = 'api/simulator_resources/recorded_audio.wav'
+COMBINED_OUTPUT_PATH = './api/simulator_resources/video.mp4'
+
 RESOLUTION = [640, 480]
 IDENTITY_DB_PATH = "./database/identities.db"
 
