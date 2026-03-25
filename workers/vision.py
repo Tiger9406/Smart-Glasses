@@ -9,7 +9,8 @@ from collections import deque
 import cv2
 import numpy as np
 
-from api.gemini_client import GeminiClient
+# from api.gemini_client import GeminiClient
+from api.openai_client import OpenAIClient
 from core import config, config_vision
 from workers.base import IngestionWorker
 from workers.vision_utils.inspireface_processor import InspireFaceProcessor
@@ -37,7 +38,8 @@ class VisionWorker(IngestionWorker):
 
         self.buffer_len = int(config_vision.FPS * config_vision.BUFFER_DURATION)
         self.frame_buffer = deque(maxlen=self.buffer_len)
-        self.vlm_client = GeminiClient()  # its own gemini client
+        # self.vlm_client = GeminiClient()  # its own gemini client
+        self.vlm_client = OpenAIClient()
 
         # async thread for continual loop for vlm
         self.loop = asyncio.new_event_loop()
@@ -45,6 +47,8 @@ class VisionWorker(IngestionWorker):
             target=self._start_background_loop, daemon=True
         )
         self.async_thread.start()
+
+        self.frame_archive = []
 
         print("[Vision] Ready")
 
@@ -67,8 +71,9 @@ class VisionWorker(IngestionWorker):
                     raw_bytes = self.input_queue.get(timeout=0.01)
                 except queue.Empty:
                     continue
+                current_time = time.time()
 
-                self.frame_buffer.append((time.time(), raw_bytes))
+                self.frame_buffer.append((current_time, raw_bytes))
 
                 frame = cv2.imdecode(
                     np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR
@@ -76,18 +81,18 @@ class VisionWorker(IngestionWorker):
                 if frame is None:
                     continue
 
-                # for testing purposes: if we wanna see bounding box behavior
-                if config_vision.SAVE_ANNOTATED_VID and self.video_writer is None:
-                    self._init_video_writer(frame)
+                faces_result = self._facial_loop(frame)
 
-                self._facial_loop(frame)
+                # for testing purposes: if we wanna see bounding box behavior
+                if config.SAVE_ANNOTATED_VID:
+                    self.frame_archive.append((current_time, raw_bytes, faces_result))
 
         finally:
             print("[Vision] Releasing resources")
             if hasattr(self, "processor") and self.processor.session:
                 self.processor.session.release()
-            if self.video_writer:
-                self.video_writer.release()
+            if config.SAVE_ANNOTATED_VID and self.frame_archive:
+                self._render_video_offline()
                 print("[Vision] VideoWriter released")
 
             if self.loop and self.loop.is_running():
@@ -176,14 +181,6 @@ class VisionWorker(IngestionWorker):
                 }
             )
 
-            if self.video_writer:
-                current_name = self.active_identities[track_id]["name"]
-                label_text = f"{current_name} (ID: {track_id})"
-                self._draw_face_label(frame, (x1, y1, x2, y2), label_text)
-
-        if self.video_writer:
-            self.video_writer.write(frame)
-
         # remove expired ids (untracked for a while)
         expired_ids = []
         for track_id, data in self.active_identities.items():
@@ -202,6 +199,38 @@ class VisionWorker(IngestionWorker):
         except queue.Full:
             print("Queue Full; passing")
             pass
+        
+        return result
+    
+    def _render_video_offline(self):
+        """Processes the stored frames and metadata into an mp4 after runtime."""
+        print(f"[Vision] Rendering {len(self.frame_archive)} frames to disk. This may take a moment...")
+        
+        if not self.frame_archive:
+            return
+
+        first_time, first_raw, _ = self.frame_archive[0]
+        first_frame = cv2.imdecode(np.frombuffer(first_raw, np.uint8), cv2.IMREAD_COLOR)
+        self._init_video_writer(first_frame)
+
+        frame_duration = 1.0 / config_vision.FPS
+        expected_time = first_time
+
+        for timestamp, raw_bytes, faces_data in self.frame_archive:
+            frame = cv2.imdecode(np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR)
+            
+            for face in faces_data:
+                label_text = f"{face['name']} (ID: {face['track_id']})"
+                self._draw_face_label(frame, face['bbox'], label_text)
+            
+            # Write the frame at least once, and duplicate if we missed the previous expected slot(s)
+            while expected_time <= timestamp:
+                self.video_writer.write(frame)
+                expected_time += frame_duration
+
+        if self.video_writer:
+            self.video_writer.release()
+            print("[Vision] Offline video rendering complete.")
 
     def _handle_commands(self):
         while not self.command_queue.empty():
@@ -272,7 +301,7 @@ class VisionWorker(IngestionWorker):
     def _init_video_writer(
         self,
         frame,
-        output_path=config_vision.ANNOTATED_OUTPUT_PATH,
+        output_path=config.VIDEO_OUTPUT_PATH,
         fps=config_vision.FPS,
     ):
         """initialize VideoWriter based on the first frame's dimensions"""
