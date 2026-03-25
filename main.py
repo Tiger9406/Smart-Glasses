@@ -1,6 +1,9 @@
 import sys
 import threading
 import time
+import os
+import subprocess
+import imageio_ffmpeg
 
 import numpy as np
 import uuid
@@ -102,6 +105,33 @@ def main():
                 w.join()
 
         print("[System] All workers stopped")
+
+        video_path = config.VIDEO_OUTPUT_PATH 
+        audio_path = config.AUDIO_OUTPUT_PATH
+        final_output_path = config.COMBINED_OUTPUT_PATH
+
+        if os.path.exists(video_path) and os.path.exists(audio_path):
+            try:
+                # Get the path to the downloaded ffmpeg binary
+                ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+                
+                command = [
+                    ffmpeg_exe, "-y",            
+                    "-i", video_path,            
+                    "-i", audio_path,            
+                    "-c:v", "copy",              
+                    "-c:a", "aac",               
+                    final_output_path
+                ]
+                
+                subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                print(f"[System] Merge complete: {final_output_path}")
+                
+            except Exception as e:
+                print(f"[System] FFmpeg merge failed: {e}")
+        else:
+            print("[System] Skipped merge: Missing audio or video file.")
+
         sys.exit(0)
 
 
