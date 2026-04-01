@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SMART GLASSES :: MONITORING SYSTEM</title>
+<style>
+  :root {
+    --green: #39ff14;
+    --green-dim: #1a6600;
+    --green-bright: #7fff00;
+    --amber: #ff9900;
+    --amber-dim: #995500;
+    --teal: #00ffcc;
+    --cyan: #00ff88;
+    --yellow-green: #aaff00;
+    --bg: #0a0a0a;
+    --panel-bg: #050505;
+    --border: #1e4d00;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--green);
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 13px;
+    overflow: hidden;
+  }
+
+  /* CRT scanlines overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.13) 2px,
+      rgba(0,0,0,0.13) 4px
+    );
+  }
+
+  /* CRT vignette */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 9997;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.75) 100%);
+  }
+
+  /* phosphor flicker */
+  @keyframes flicker {
+    0%,89%,91%,100% { opacity: 1; }
+    90% { opacity: 0.88; }
+  }
+  body { animation: flicker 9s infinite; }
+
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  .cursor { animation: blink 1s step-end infinite; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  .log-line { animation: fadeIn 0.12s ease-out forwards; }
+
+  /* ---- LAYOUT ---- */
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    padding: 6px;
+    gap: 6px;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid var(--green);
+    padding: 5px 12px;
+    background: var(--panel-bg);
+    box-shadow: 0 0 10px rgba(57,255,20,0.15), inset 0 0 8px rgba(57,255,20,0.04);
+    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .header-title {
+    font-size: 15px;
+    font-weight: bold;
+    text-shadow: 0 0 8px var(--green), 0 0 20px rgba(57,255,20,0.3);
+    letter-spacing: 2px;
+  }
+  .header-status {
+    display: flex;
+    gap: 18px;
+    font-size: 11px;
+    color: var(--green-dim);
+  }
+  .header-status .online { color: var(--green); }
+  .header-status .lost { color: var(--amber); }
+  #conn-status { color: var(--green); }
+  #conn-status.disconnected { color: var(--amber); animation: blink 0.8s step-end infinite; }
+  #clock { color: var(--green-dim); }
+
+  /* Panels row */
+  .panels {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 6px;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .panel {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    box-shadow: 0 0 12px rgba(57,255,20,0.08), inset 0 0 12px rgba(57,255,20,0.03);
+    min-height: 0;
+    transition: border-color 0.3s;
+  }
+  .panel:hover { border-color: var(--green); }
+
+  .panel-header {
+    padding: 4px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--green);
+    text-shadow: 0 0 6px var(--green);
+    flex-shrink: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .panel-header .count {
+    color: var(--green-dim);
+    font-size: 10px;
+  }
+
+  .panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 8px;
+    min-height: 0;
+  }
+  .panel-body::-webkit-scrollbar { width: 4px; }
+  .panel-body::-webkit-scrollbar-track { background: transparent; }
+  .panel-body::-webkit-scrollbar-thumb { background: var(--green-dim); border-radius: 2px; }
+
+  /* Log lines */
+  .log-line {
+    line-height: 1.45;
+    word-break: break-word;
+    padding: 1px 0;
+  }
+  .log-ts { color: var(--green-dim); margin-right: 4px; }
+  .log-src { margin-right: 5px; font-weight: bold; }
+  .log-text { color: #c8ffc8; }
+
+  .src-coordinator { color: var(--green); text-shadow: 0 0 5px var(--green); }
+  .src-system      { color: var(--amber); text-shadow: 0 0 5px var(--amber); }
+  .src-audio       { color: var(--cyan);  text-shadow: 0 0 5px var(--cyan); }
+  .src-vision      { color: var(--yellow-green); text-shadow: 0 0 5px var(--yellow-green); }
+  .src-api         { color: var(--teal);  text-shadow: 0 0 5px var(--teal); }
+
+  /* DB panel */
+  .db-panel-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    overflow: hidden;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .db-section {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .db-section.users-section { flex: 0 0 auto; max-height: 45%; }
+  .db-section.chat-section  { flex: 1; min-height: 0; border-top: 1px solid var(--border); }
+
+  .db-section-header {
+    padding: 4px 8px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--green-dim);
+    flex-shrink: 0;
+    border-bottom: 1px dashed var(--border);
+  }
+
+  .db-section-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 8px;
+    min-height: 0;
+  }
+  .db-section-body::-webkit-scrollbar { width: 3px; }
+  .db-section-body::-webkit-scrollbar-thumb { background: var(--green-dim); }
+
+  /* DB status bar */
+  .db-status-bar {
+    padding: 3px 8px;
+    font-size: 10px;
+    color: var(--green-dim);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .db-status-bar span { color: var(--green); }
+
+  /* User entries */
+  .user-entry {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    font-size: 12px;
+    color: #c8ffc8;
+    border-bottom: 1px dashed rgba(30,77,0,0.4);
+  }
+  .user-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge {
+    font-size: 9px;
+    padding: 1px 4px;
+    border-radius: 2px;
+    border: 1px solid;
+    white-space: nowrap;
+  }
+  .badge-face  { color: var(--cyan); border-color: var(--cyan); }
+  .badge-voice { color: var(--yellow-green); border-color: var(--yellow-green); }
+  .badge-none  { color: var(--green-dim); border-color: var(--green-dim); }
+
+  /* Chat entries */
+  .chat-entry {
+    padding: 2px 0;
+    font-size: 11px;
+    color: #b0f0b0;
+    border-bottom: 1px dashed rgba(30,77,0,0.3);
+    word-break: break-word;
+  }
+  .chat-ts   { color: var(--green-dim); font-size: 10px; margin-right: 4px; }
+  .chat-text { }
+
+  .empty-msg { color: var(--green-dim); font-size: 11px; padding: 4px 0; font-style: italic; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-title">SMART GLASSES :: MONITORING SYSTEM v1.0 <span class="cursor">|</span></div>
+    <div class="header-status">
+      <span id="conn-status" class="online">[SIGNAL NOMINAL]</span>
+      <span id="clock"></span>
+    </div>
+  </div>
+
+  <!-- PANELS -->
+  <div class="panels">
+
+    <!-- Panel 1: Coordinator -->
+    <div class="panel" id="coord-panel">
+      <div class="panel-header">
+        &gt; COORDINATOR LOG
+        <span class="count" id="coord-count">[0]</span>
+      </div>
+      <div class="panel-body" id="coord-log"></div>
+    </div>
+
+    <!-- Panel 2: Workers -->
+    <div class="panel" id="workers-panel">
+      <div class="panel-header">
+        &gt; WORKERS LOG
+        <span class="count" id="workers-count">[0]</span>
+      </div>
+      <div class="panel-body" id="workers-log"></div>
+    </div>
+
+    <!-- Panel 3: Database -->
+    <div class="panel" id="db-panel">
+      <div class="panel-header">&gt; DATABASE STATUS</div>
+      <div class="db-status-bar" id="db-statusbar">DB: WAITING &nbsp;|&nbsp; FACES: - &nbsp;|&nbsp; VOICES: - &nbsp;|&nbsp; CHAT: -</div>
+      <div class="db-panel-body">
+        <div class="db-section users-section">
+          <div class="db-section-header">&gt; REGISTERED IDENTITIES</div>
+          <div class="db-section-body" id="users-list">
+            <div class="empty-msg">-- awaiting data --</div>
+          </div>
+        </div>
+        <div class="db-section chat-section">
+          <div class="db-section-header">&gt; RECENT TRANSMISSIONS</div>
+          <div class="db-section-body" id="chat-list">
+            <div class="empty-msg">-- awaiting data --</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const MAX_LOG_LINES = 500;
+  let coordCount = 0;
+  let workersCount = 0;
+  let ws = null;
+  let reconnectTimer = null;
+
+  // ---- Clock ----
+  function updateClock() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2,'0');
+    const m = String(now.getMinutes()).padStart(2,'0');
+    const s = String(now.getSeconds()).padStart(2,'0');
+    document.getElementById('clock').textContent = h + ':' + m + ':' + s;
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // ---- Formatting ----
+  function fmtTs(ts) {
+    const d = new Date(ts * 1000);
+    const h = String(d.getHours()).padStart(2,'0');
+    const m = String(d.getMinutes()).padStart(2,'0');
+    const s = String(d.getSeconds()).padStart(2,'0');
+    return h + ':' + m + ':' + s;
+  }
+
+  function fmtDbTs(ts) {
+    if (!ts) return '';
+    // ts is a string like "2026-04-01 12:34:56" or similar
+    try {
+      const d = new Date(ts);
+      if (isNaN(d.getTime())) return ts.slice(11,19) || ts;
+      const h = String(d.getHours()).padStart(2,'0');
+      const mn = String(d.getMinutes()).padStart(2,'0');
+      const sc = String(d.getSeconds()).padStart(2,'0');
+      return h + ':' + mn + ':' + sc;
+    } catch(_) { return ts; }
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;');
+  }
+
+  function srcClass(source) {
+    if (!source) return '';
+    const s = source.toLowerCase();
+    if (s.includes('coordinator')) return 'src-coordinator';
+    if (s.includes('system'))      return 'src-system';
+    if (s.includes('audio'))       return 'src-audio';
+    if (s.includes('vision'))      return 'src-vision';
+    if (s.includes('api'))         return 'src-api';
+    return '';
+  }
+
+  // ---- Auto-scroll ----
+  function isNearBottom(el) {
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+  }
+
+  function scrollToBottom(el) {
+    el.scrollTop = el.scrollHeight;
+  }
+
+  // ---- Append log line ----
+  function appendLog(container, counterId, source, text, ts) {
+    const nearBottom = isNearBottom(container);
+
+    const div = document.createElement('div');
+    div.className = 'log-line';
+
+    const tsSpan = document.createElement('span');
+    tsSpan.className = 'log-ts';
+    tsSpan.textContent = '[' + fmtTs(ts) + ']';
+
+    const srcSpan = document.createElement('span');
+    srcSpan.className = 'log-src ' + srcClass(source);
+    srcSpan.textContent = source;
+
+    const txtSpan = document.createElement('span');
+    txtSpan.className = 'log-text';
+    // strip the [Tag] prefix from the text if it's already in source
+    let displayText = text;
+    const tagMatch = source.replace(/\[|\]/g,'');
+    if (displayText.startsWith(source)) {
+      displayText = displayText.slice(source.length).trimStart();
+    }
+    txtSpan.textContent = ' ' + displayText;
+
+    div.appendChild(tsSpan);
+    div.appendChild(srcSpan);
+    div.appendChild(txtSpan);
+    container.appendChild(div);
+
+    // trim old lines
+    while (container.children.length > MAX_LOG_LINES) {
+      container.removeChild(container.firstChild);
+    }
+
+    // update counter
+    const el = document.getElementById(counterId);
+    const current = parseInt(el.textContent.replace(/[\[\]]/g,'')) || 0;
+    el.textContent = '[' + (current + 1) + ']';
+
+    if (nearBottom) scrollToBottom(container);
+  }
+
+  // ---- Handle incoming log message ----
+  function handleLog(msg) {
+    const source = msg.source || '';
+    const text   = msg.text   || '';
+    const ts     = msg.ts     || (Date.now() / 1000);
+
+    const isCoord  = source === '[Coordinator]' || source === '[System]';
+    const isWorker = source === '[AudioWorker]' || source === '[Vision]' || source === '[API Worker]';
+
+    if (isCoord) {
+      appendLog(
+        document.getElementById('coord-log'),
+        'coord-count',
+        source, text, ts
+      );
+    } else if (isWorker) {
+      appendLog(
+        document.getElementById('workers-log'),
+        'workers-count',
+        source, text, ts
+      );
+    }
+  }
+
+  // ---- Handle DB update ----
+  function handleDbUpdate(data) {
+    const users       = data.users       || [];
+    const chatHistory = data.chat_history|| [];
+    const faceCount   = data.face_count  || 0;
+    const voiceCount  = data.voice_count || 0;
+    const chatCount   = data.chat_count  || chatHistory.length;
+
+    // status bar
+    document.getElementById('db-statusbar').innerHTML =
+      'DB: <span>LIVE</span> &nbsp;|&nbsp; FACES: <span>' + faceCount +
+      '</span> &nbsp;|&nbsp; VOICES: <span>' + voiceCount +
+      '</span> &nbsp;|&nbsp; CHAT: <span>' + chatCount + '</span>';
+
+    // users list
+    const usersList = document.getElementById('users-list');
+    if (users.length === 0) {
+      usersList.innerHTML = '<div class="empty-msg">-- no identities registered --</div>';
+    } else {
+      usersList.innerHTML = '';
+      users.forEach(function(u) {
+        const div = document.createElement('div');
+        div.className = 'user-entry';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'user-name';
+        nameSpan.textContent = escHtml(u.name);
+
+        div.appendChild(nameSpan);
+
+        if (u.has_face) {
+          const b = document.createElement('span');
+          b.className = 'badge badge-face';
+          b.textContent = 'FACE';
+          div.appendChild(b);
+        }
+        if (u.has_voice) {
+          const b = document.createElement('span');
+          b.className = 'badge badge-voice';
+          b.textContent = 'VOICE';
+          div.appendChild(b);
+        }
+        if (!u.has_face && !u.has_voice) {
+          const b = document.createElement('span');
+          b.className = 'badge badge-none';
+          b.textContent = '-';
+          div.appendChild(b);
+        }
+
+        usersList.appendChild(div);
+      });
+    }
+
+    // chat history
+    const chatList = document.getElementById('chat-list');
+    const wasNearBottom = isNearBottom(chatList);
+
+    if (chatHistory.length === 0) {
+      chatList.innerHTML = '<div class="empty-msg">-- no transmissions --</div>';
+    } else {
+      chatList.innerHTML = '';
+      chatHistory.forEach(function(c) {
+        const div = document.createElement('div');
+        div.className = 'chat-entry';
+
+        const tsSpan = document.createElement('span');
+        tsSpan.className = 'chat-ts';
+        tsSpan.textContent = '[' + fmtDbTs(c.timestamp) + ']';
+
+        const txtSpan = document.createElement('span');
+        txtSpan.className = 'chat-text';
+        txtSpan.textContent = escHtml(c.transcript);
+
+        div.appendChild(tsSpan);
+        div.appendChild(txtSpan);
+        chatList.appendChild(div);
+      });
+    }
+
+    if (wasNearBottom) scrollToBottom(chatList);
+  }
+
+  // ---- WebSocket ----
+  function setConnected(ok) {
+    const el = document.getElementById('conn-status');
+    if (ok) {
+      el.textContent = '[SIGNAL NOMINAL]';
+      el.className = 'online';
+    } else {
+      el.textContent = '[SIGNAL LOST — RECONNECTING]';
+      el.className = 'disconnected';
+    }
+  }
+
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = proto + '://' + location.host + '/ws';
+    ws = new WebSocket(url);
+
+    ws.onopen = function() {
+      setConnected(true);
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    };
+
+    ws.onmessage = function(evt) {
+      let msg;
+      try { msg = JSON.parse(evt.data); } catch(_) { return; }
+      if (msg.type === 'log')       handleLog(msg);
+      else if (msg.type === 'db_update') handleDbUpdate(msg);
+    };
+
+    ws.onclose = function() {
+      setConnected(false);
+      ws = null;
+      reconnectTimer = setTimeout(connect, 3000);
+    };
+
+    ws.onerror = function() {
+      ws && ws.close();
+    };
+  }
+
+  connect();
+})();
+</script>
+</body>
+</html>
