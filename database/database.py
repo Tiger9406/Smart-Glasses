@@ -205,6 +205,26 @@ class DatabaseManager:
             )
             return cursor.fetchall()
     
+    def get_recent_chat_history(self, limit: int = 50) -> list:
+        """Returns most recent chat entries across all users, ordered oldest-first for display."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT ch.id, ch.user_id, u.name, ch.transcript, ch.timestamp
+                FROM chat_history ch
+                JOIN users u ON ch.user_id = u.id
+                ORDER BY ch.id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+            rows = cursor.fetchall()
+        return [
+            {"id": r[0], "user_id": r[1], "user_name": r[2], "transcript": r[3], "timestamp": str(r[4])}
+            for r in reversed(rows)
+        ]
+
     def get_user_ids_by_name(self, name: str):
         """Returns the UUID for a given name, or None if not found."""
         with self._get_connection() as conn:

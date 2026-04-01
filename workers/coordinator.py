@@ -10,6 +10,7 @@ from collections import deque
 import numpy as np
 
 from core import config
+from core.log_interceptor import install_log_interceptor
 from database.database import DatabaseManager
 from workers.base import BaseWorker
 
@@ -21,8 +22,9 @@ class Coordinator(BaseWorker):
         gemini_commands_queue: mp.Queue,
         vision_commands_queue: mp.Queue,
         audio_commands_queue: mp.Queue,
+        log_queue: mp.Queue = None,
     ):
-        super().__init__()
+        super().__init__(log_queue=log_queue)
         self.events_queue = results_queue
         self.llm_commands_queue = gemini_commands_queue
         self.vision_commands_queue = vision_commands_queue
@@ -66,6 +68,8 @@ class Coordinator(BaseWorker):
         }
 
     def run(self):
+        if self.log_queue is not None:
+            install_log_interceptor(self.log_queue, "[Coordinator]")
         print("[Coordinator] Started")
         self.setup()
 
@@ -124,7 +128,6 @@ class Coordinator(BaseWorker):
         if text and user_id != config.DEFAULT_ID:
             transcript = f"{speaker_name}: {text}"
             self.db.save_chat_history(user_id, transcript)
-            print("[Coordinater]: Saved transcript in DB")
         else:
             transcript = f"{speaker_name}: {text}"
 

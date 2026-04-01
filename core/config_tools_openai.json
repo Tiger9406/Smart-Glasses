@@ -11,7 +11,7 @@
       "type": "function",
       "function": {
         "name": "register_identity",
-        "description": "Triggers when a name is introduced in conversation (e.g., 'Nice to meet you, John', 'This is Sarah', or 'Hi Bob!'); Do NOT trigger if a name is merely mentioned in passing (e.g., 'I saw John yesterday') or if the name is the main user.",
+        "description": "Triggers when a name is introduced OR when the main user directly addresses an unidentified person by a specific name (e.g., 'Nice to meet you, John', 'This is Sarah', 'Hi Bob!', 'Hey Alex!'). ALWAYS trigger if the main user greets or addresses someone by name — even if that person has been speaking as 'Unknown'. Do NOT trigger if a name is merely mentioned in passing (e.g., 'I saw John yesterday') or if the name is the main user.",
         "parameters": {
           "type": "object",
           "properties": {

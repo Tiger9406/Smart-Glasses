@@ -10,8 +10,10 @@ import uuid
 
 from api.udp_receiver import udp_receiver_thread, udp_shutdown_event
 from core import config
+from core.log_interceptor import install_log_interceptor
 from core.shared_mem import SharedMem
 from database.database import DatabaseManager
+from frontend.server import start_monitoring_server
 from workers.api_worker import APIWorker
 from workers.audio import AudioWorker
 from workers.coordinator import Coordinator
@@ -20,6 +22,8 @@ from workers.vision import VisionWorker
 
 def main():
     shared_mem = SharedMem()
+    install_log_interceptor(shared_mem.log_queue, "[System]")
+    start_monitoring_server(shared_mem.log_queue, config.IDENTITY_DB_PATH)
     db = DatabaseManager()
     if config.START_WITH_SAMPLE_DATA:
         sample_uuids = {}
@@ -42,17 +46,21 @@ def main():
         shared_mem.gemini_command_queue,
         shared_mem.vision_command_queue,
         shared_mem.audio_command_queue,
+        log_queue=shared_mem.log_queue,
     )
     audio_worker = AudioWorker(
-        shared_mem.audio_queue, shared_mem.results_queue, shared_mem.audio_command_queue
+        shared_mem.audio_queue, shared_mem.results_queue, shared_mem.audio_command_queue,
+        log_queue=shared_mem.log_queue,
     )
     vision_worker = VisionWorker(
         shared_mem.vision_queue,
         shared_mem.results_queue,
         shared_mem.vision_command_queue,
+        log_queue=shared_mem.log_queue,
     )
 
-    api_worker = APIWorker(shared_mem.gemini_command_queue, shared_mem.results_queue)
+    api_worker = APIWorker(shared_mem.gemini_command_queue, shared_mem.results_queue,
+                           log_queue=shared_mem.log_queue)
 
     print("[System] Starting background workers")
 

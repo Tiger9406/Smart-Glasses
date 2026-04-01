@@ -6,10 +6,11 @@
 import multiprocessing as mp
 
 class BaseWorker(mp.Process):
-    def __init__(self):  # gotta comm via queue; could look into shared memory or pipe if queue too slow
+    def __init__(self, log_queue: mp.Queue = None):  # gotta comm via queue; could look into shared memory or pipe if queue too slow
         super().__init__(daemon=True)
         self.running = mp.Event()
         self.running.set()
+        self.log_queue = log_queue
 
     def run(self):
         raise NotImplementedError
@@ -19,7 +20,7 @@ class BaseWorker(mp.Process):
 
 
 class IngestionWorker(BaseWorker):
-    def __init__(self, input_queue: mp.Queue, output_queue: mp.Queue):
-        super().__init__()
-        self.input_queue=input_queue
+    def __init__(self, input_queue: mp.Queue, output_queue: mp.Queue, log_queue: mp.Queue = None):
+        super().__init__(log_queue=log_queue)
+        self.input_queue = input_queue
         self.output_queue = output_queue

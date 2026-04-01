@@ -12,6 +12,7 @@ import numpy as np
 # from api.gemini_client import GeminiClient
 from api.openai_client import OpenAIClient
 from core import config, config_vision
+from core.log_interceptor import install_log_interceptor
 from workers.base import IngestionWorker
 from workers.vision_utils.inspireface_processor import InspireFaceProcessor
 
@@ -22,8 +23,9 @@ class VisionWorker(IngestionWorker):
         input_queue: mp.Queue,
         output_queue: mp.Queue,
         vision_command_queue: mp.Queue,
+        log_queue: mp.Queue = None,
     ):
-        super().__init__(input_queue, output_queue)
+        super().__init__(input_queue, output_queue, log_queue=log_queue)
         self.command_queue = vision_command_queue
 
     def setup(self):
@@ -61,6 +63,8 @@ class VisionWorker(IngestionWorker):
         self.loop.run_forever()  # blocking; awaits something thrown at self.loop
 
     def run(self):
+        if self.log_queue is not None:
+            install_log_interceptor(self.log_queue, "[Vision]")
         # for now some basic logic about facial recognition; avoids re-recognizing too often
         self.setup()
 
