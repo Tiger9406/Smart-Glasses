@@ -22,13 +22,17 @@ class OpenAIClient:
         with open(config_openai.TOOLS_JSON_PATH, "r") as f:
             tools_config = json.load(f)
 
+        from datetime import date as _date
         self.sys_instruct = (
             tools_config.get("systemInstruction", {})
             .get("parts", [{}])[0]
             .get("text", "")
         )
         if self.sys_instruct:
-            self.sys_instruct = self.sys_instruct.format(user_name=self.user_name)
+            self.sys_instruct = self.sys_instruct.format(
+                user_name=self.user_name,
+                today=_date.today().isoformat(),
+            )
 
         self.tools = tools_config.get("tools", [])
 
@@ -122,17 +126,28 @@ class OpenAIClient:
         ) as response:
             return await self._handle_response(response, "MEMORY_JSON")
 
-    async def parse_intent(self, prompt: str) -> str:
+    async def parse_intent(self, prompt: str) -> dict:
+        if not self.api_key:
+            raise ValueError("API Key not configured")
 
+        messages = [
+            {"role": "system", "content": self.sys_instruct},
+            {"role": "user", "content": prompt},
+        ]
+        _, parsed = await self._call_tools_api(messages)
+        return parsed
+
+    async def _call_tools_api(self, messages: list) -> tuple:
+        """One LLM call with tools. Returns (raw_assistant_message_dict, parsed_result).
+        The raw message can be appended back to messages for multi-turn tool loops.
+        parsed_result includes 'cmd', 'args', 'tool_call_id', and 'tool_calls'.
+        """
         if not self.api_key:
             raise ValueError("API Key not configured")
 
         payload = {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": self.sys_instruct},
-                {"role": "user", "content": prompt},
-            ],
+            "messages": messages,
             "tools": self.tools,
             "temperature": self.temperature,
             "max_tokens": self.max_output_tokens,
@@ -147,7 +162,32 @@ class OpenAIClient:
                 "Authorization": f"Bearer {self.api_key}",
             },
         ) as response:
-            return await self._handle_response(response, "INTENT")
+            if response.status != 200:
+                text = await response.text()
+                raise RuntimeError(f"API Error {response.status}: {text}")
+
+            result = await response.json()
+            choices = result.get("choices", [])
+            if not choices:
+                raise ValueError(f"No choices returned. Full response: {result}")
+
+            message = choices[0].get("message", {})
+            tool_calls = message.get("tool_calls")
+
+            if tool_calls:
+                func = tool_calls[0].get("function", {})
+                parsed = {
+                    "cmd": func.get("name", "").upper(),
+                    "args": json.loads(func.get("arguments", "{}")),
+                    "tool_call_id": tool_calls[0].get("id", ""),
+                    "tool_calls": tool_calls,
+                }
+            elif message.get("content"):
+                parsed = {"cmd": "CHAT", "args": {"message": message.get("content")}}
+            else:
+                parsed = None
+
+            return message, parsed
 
     async def _handle_response(self, response, response_type: str):
         if response.status != 200:
@@ -170,15 +210,3 @@ class OpenAIClient:
             except json.JSONDecodeError:
                 print(f"Failed to parse JSON memory: {message.get('content')}")
                 return []
-
-        elif response_type == "INTENT":
-            tool_calls = message.get("tool_calls")
-            if tool_calls:
-                func = tool_calls[0].get("function", {})
-                return {
-                    "cmd": func.get("name", "").upper(),
-                    "args": json.loads(func.get("arguments", "{}")),
-                }
-            elif message.get("content"):
-                return {"cmd": "CHAT", "args": {"message": message.get("content")}}
-            return None

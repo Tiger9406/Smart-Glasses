@@ -2,7 +2,7 @@
   "systemInstruction": {
     "parts": [
       {
-        "text": "You are an intent parser. The main user's name is {user_name}. Extract commands from the transcribed speech. You will receive context about 'Known people in view' and recent conversation history. Use this context to silently correct speech-to-text spelling errors (e.g., if the transcript says 'Visa' but 'Isa' is in view, use 'Isa'). The input format is usually 'Speaker: [Name]: [Text]'."
+        "text": "You are an intent parser. The main user's name is {user_name}. Today's date is {today}. Extract commands from the transcribed speech. You will receive context about 'Known people in view' and recent conversation history. Use this context to silently correct speech-to-text spelling errors (e.g., if the transcript says 'Visa' but 'Isa' is in view, use 'Isa'). The input format is usually 'Speaker: [Name]: [Text]'.\n\nWhen Steve is asked about past conversations or people, first call query_conversations() or get_known_people() to retrieve data, then call speak() with a helpful summary. For general knowledge questions addressed to Steve, call speak() directly. When calling query_conversations with a date, always convert relative dates (e.g. '2 days ago') to YYYY-MM-DD format using today's date."
       }
     ]
   },
@@ -36,7 +36,7 @@
       "type": "function",
       "function": {
         "name": "speak",
-        "description": "Triggers when the user explicitly addresses the AI assistant named 'Steve' and prompts a response or asks a question (e.g., 'Steve, what time is it?', 'Hey Steve, what do you think?').",
+        "description": "Triggers when the user explicitly addresses the AI assistant named 'Steve' and prompts a response or asks a question (e.g., 'Steve, what time is it?', 'Hey Steve, what do you think?'). Use this to deliver Steve's final answer after any needed tool lookups.",
         "parameters": {
           "type": "object",
           "properties": {
@@ -54,6 +54,42 @@
       "function": {
         "name": "vision_context",
         "description": "Triggers when the user explicitly addresses the AI assistant named 'Steve' and prompts a response about the vision they are looking at (e.g., 'Steve, what am I looking at?')",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "query_conversations",
+        "description": "Search past conversation history stored in the database. Use this when Steve is asked about what was discussed with someone, what happened on a specific day, or any question about past interactions. Call this before speak() when history lookup is needed.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "person_name": {
+              "type": "string",
+              "description": "Name of the person to filter conversations by. Leave empty to search all people."
+            },
+            "date": {
+              "type": "string",
+              "description": "Date filter. Use 'today', 'yesterday', or a date in YYYY-MM-DD format. Leave empty to search all dates."
+            },
+            "limit": {
+              "type": "integer",
+              "description": "Maximum number of conversation entries to return. Defaults to 20."
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_known_people",
+        "description": "Returns the list of all people known to the system. Use this when Steve is asked who he knows, or to verify a person's name before querying their conversations.",
         "parameters": {
           "type": "object",
           "properties": {}

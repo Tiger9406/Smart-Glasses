@@ -231,6 +231,73 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute("SELECT id FROM users WHERE name = ?", (name,))
             return [row[0] for row in cursor.fetchall()]
+
+    def search_conversations(self, person_name: str = None, date_str: str = None, limit: int = 20) -> list:
+        """Search conversation history by person name and/or date.
+        date_str accepts: 'today', 'yesterday', or 'YYYY-MM-DD'.
+        """
+        from datetime import date, timedelta, datetime
+
+        date_filter = None
+        if date_str:
+            today = date.today()
+            normalized = date_str.lower().strip()
+            if normalized == "today":
+                date_filter = today.isoformat()
+            elif normalized == "yesterday":
+                date_filter = (today - timedelta(days=1)).isoformat()
+            else:
+                # Handle "N days ago" (e.g. "2 days ago", "3 days ago")
+                import re
+                m = re.match(r"(\d+)\s+days?\s+ago", normalized)
+                if m:
+                    date_filter = (today - timedelta(days=int(m.group(1)))).isoformat()
+                else:
+                    try:
+                        date_filter = datetime.strptime(date_str, "%Y-%m-%d").date().isoformat()
+                    except ValueError:
+                        pass
+
+        conditions = []
+        params = []
+
+        if person_name:
+            conditions.append("LOWER(u.name) LIKE LOWER(?)")
+            params.append(f"%{person_name}%")
+
+        if date_filter:
+            conditions.append("DATE(ch.timestamp) = ?")
+            params.append(date_filter)
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.append(limit)
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"""
+                SELECT u.name, ch.transcript, ch.timestamp
+                FROM chat_history ch
+                JOIN users u ON ch.user_id = u.id
+                {where_clause}
+                ORDER BY ch.id DESC
+                LIMIT ?
+                """,
+                params,
+            )
+            rows = cursor.fetchall()
+
+        return [
+            {"user_name": r[0], "transcript": r[1], "timestamp": str(r[2])}
+            for r in reversed(rows)
+        ]
+
+    def get_all_user_names(self) -> list:
+        """Returns a list of all known user names."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM users ORDER BY name")
+            return [row[0] for row in cursor.fetchall()]
         
     def get_voice_embeddings_by_uid(self, user_id: str):
         """returns a list of voice embeddings for a given UUID"""
