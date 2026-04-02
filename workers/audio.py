@@ -12,6 +12,7 @@ import onnxruntime as ort
 from parakeet_mlx import from_pretrained
 
 from core import config, config_audio
+from core.log_interceptor import install_log_interceptor
 from database.database import DatabaseManager
 from workers.base import IngestionWorker
 
@@ -22,8 +23,9 @@ class AudioWorker(IngestionWorker):
         input_queue: mp.Queue,
         output_queue: mp.Queue,
         audio_command_queue: mp.Queue,
+        log_queue: mp.Queue = None,
     ):
-        super().__init__(input_queue, output_queue)
+        super().__init__(input_queue, output_queue, log_queue=log_queue)
         self.command_queue = audio_command_queue
 
     def setup(self):
@@ -144,6 +146,8 @@ class AudioWorker(IngestionWorker):
         return best_uid
 
     def run(self):
+        if self.log_queue is not None:
+            install_log_interceptor(self.log_queue, "[AudioWorker]")
         self.setup()
 
         audio_buffer = b""

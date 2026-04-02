@@ -1,0 +1,1387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SMART GLASSES :: MONITORING SYSTEM</title>
+<style>
+  :root {
+    --green: #39ff14;
+    --green-dim: #1a6600;
+    --green-bright: #7fff00;
+    --amber: #ff9900;
+    --amber-dim: #995500;
+    --teal: #00ffcc;
+    --cyan: #00ff88;
+    --yellow-green: #aaff00;
+    --red: #ff3030;
+    --red-dim: #660000;
+    --bg: #0a0a0a;
+    --panel-bg: #050505;
+    --border: #1e4d00;
+    --cc-border: #2a2a00;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--green);
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 13px;
+    overflow: hidden;
+  }
+
+  /* CRT scanlines overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.13) 2px,
+      rgba(0,0,0,0.13) 4px
+    );
+  }
+
+  /* CRT vignette */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 9997;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.75) 100%);
+  }
+
+  @keyframes flicker {
+    0%,89%,91%,100% { opacity: 1; }
+    90% { opacity: 0.88; }
+  }
+  body { animation: flicker 9s infinite; }
+
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  .cursor { animation: blink 1s step-end infinite; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  .log-line { animation: fadeIn 0.12s ease-out forwards; }
+
+  /* ---- LAYOUT ---- */
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    padding: 6px;
+    gap: 6px;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid var(--green);
+    padding: 5px 12px;
+    background: var(--panel-bg);
+    box-shadow: 0 0 10px rgba(57,255,20,0.15), inset 0 0 8px rgba(57,255,20,0.04);
+    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .header-title {
+    font-size: 15px;
+    font-weight: bold;
+    text-shadow: 0 0 8px var(--green), 0 0 20px rgba(57,255,20,0.3);
+    letter-spacing: 2px;
+  }
+  .header-status {
+    display: flex;
+    gap: 18px;
+    font-size: 11px;
+    color: var(--green-dim);
+  }
+  .header-status .online { color: var(--green); }
+  .header-status .lost { color: var(--amber); }
+  #conn-status { color: var(--green); }
+  #conn-status.disconnected { color: var(--amber); animation: blink 0.8s step-end infinite; }
+  #clock { color: var(--green-dim); }
+
+  /* Panels row */
+  .panels {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 6px;
+    flex: 2;
+    min-height: 0;
+  }
+
+  .panel {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    box-shadow: 0 0 12px rgba(57,255,20,0.08), inset 0 0 12px rgba(57,255,20,0.03);
+    min-height: 0;
+    transition: border-color 0.3s;
+  }
+  .panel:hover { border-color: var(--green); }
+
+  .panel-header {
+    padding: 4px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--green);
+    text-shadow: 0 0 6px var(--green);
+    flex-shrink: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .panel-header .count {
+    color: var(--green-dim);
+    font-size: 10px;
+  }
+
+  .panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 8px;
+    min-height: 0;
+  }
+  .panel-body::-webkit-scrollbar { width: 4px; }
+  .panel-body::-webkit-scrollbar-track { background: transparent; }
+  .panel-body::-webkit-scrollbar-thumb { background: var(--green-dim); border-radius: 2px; }
+
+  /* Log lines */
+  .log-line {
+    line-height: 1.45;
+    word-break: break-word;
+    padding: 1px 0;
+  }
+  .log-ts { color: var(--green-dim); margin-right: 4px; }
+  .log-src { margin-right: 5px; font-weight: bold; }
+  .log-text { color: #c8ffc8; }
+
+  .src-coordinator { color: var(--green); text-shadow: 0 0 5px var(--green); }
+  .src-system      { color: var(--amber); text-shadow: 0 0 5px var(--amber); }
+  .src-audio       { color: var(--cyan);  text-shadow: 0 0 5px var(--cyan); }
+  .src-vision      { color: var(--yellow-green); text-shadow: 0 0 5px var(--yellow-green); }
+  .src-api         { color: var(--teal);  text-shadow: 0 0 5px var(--teal); }
+
+  /* DB panel */
+  .db-panel-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    overflow: hidden;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .db-section {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .db-section.users-section { flex: 0 0 auto; max-height: 45%; }
+  .db-section.chat-section  { flex: 1; min-height: 0; border-top: 1px solid var(--border); }
+
+  .db-section-header {
+    padding: 4px 8px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--green-dim);
+    flex-shrink: 0;
+    border-bottom: 1px dashed var(--border);
+  }
+
+  .db-section-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 8px;
+    min-height: 0;
+  }
+  .db-section-body::-webkit-scrollbar { width: 3px; }
+  .db-section-body::-webkit-scrollbar-thumb { background: var(--green-dim); }
+
+  /* DB status bar */
+  .db-status-bar {
+    padding: 3px 8px;
+    font-size: 10px;
+    color: var(--green-dim);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .db-status-bar span { color: var(--green); }
+
+  /* User entries */
+  .user-entry {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    font-size: 12px;
+    color: #c8ffc8;
+    border-bottom: 1px dashed rgba(30,77,0,0.4);
+  }
+  .user-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge {
+    font-size: 9px;
+    padding: 1px 4px;
+    border-radius: 2px;
+    border: 1px solid;
+    white-space: nowrap;
+  }
+  .badge-face  { color: var(--cyan); border-color: var(--cyan); }
+  .badge-voice { color: var(--yellow-green); border-color: var(--yellow-green); }
+  .badge-none  { color: var(--green-dim); border-color: var(--green-dim); }
+
+  /* Chat entries */
+  .chat-entry {
+    padding: 2px 0;
+    font-size: 11px;
+    color: #b0f0b0;
+    border-bottom: 1px dashed rgba(30,77,0,0.3);
+    word-break: break-word;
+  }
+  .chat-ts   { color: var(--green-dim); font-size: 10px; margin-right: 4px; }
+
+  .empty-msg { color: var(--green-dim); font-size: 11px; padding: 4px 0; font-style: italic; }
+
+  /* ================================================================
+     COMMAND CONSOLE (control center)
+     ================================================================ */
+  .control-center {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--amber-dim);
+    background: var(--panel-bg);
+    box-shadow: 0 0 14px rgba(255,153,0,0.08), inset 0 0 14px rgba(255,153,0,0.03);
+    transition: flex 0.25s ease;
+  }
+  .control-center.collapsed { flex: 0 0 26px; overflow: hidden; }
+
+  .cc-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 10px;
+    border-bottom: 1px solid var(--cc-border);
+    flex-shrink: 0;
+    background: rgba(255,153,0,0.04);
+  }
+  .cc-title {
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    color: var(--amber);
+    text-shadow: 0 0 6px var(--amber);
+    white-space: nowrap;
+  }
+
+  .cc-tabs {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+  }
+  .cc-tab {
+    font-size: 10px;
+    padding: 2px 8px;
+    border: 1px solid var(--cc-border);
+    color: var(--green-dim);
+    cursor: pointer;
+    letter-spacing: 1px;
+    user-select: none;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .cc-tab:hover { color: var(--amber); border-color: var(--amber-dim); }
+  .cc-tab.active {
+    color: var(--amber);
+    border-color: var(--amber);
+    text-shadow: 0 0 5px var(--amber);
+    background: rgba(255,153,0,0.06);
+  }
+
+  .cc-toggle {
+    font-family: inherit;
+    font-size: 10px;
+    background: none;
+    border: 1px solid var(--cc-border);
+    color: var(--green-dim);
+    cursor: pointer;
+    padding: 2px 6px;
+    white-space: nowrap;
+  }
+  .cc-toggle:hover { color: var(--amber); border-color: var(--amber-dim); }
+
+  /* Body container that holds all tab panes */
+  .cc-body-wrap {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .cc-pane {
+    display: none;
+    flex: 1;
+    min-height: 0;
+  }
+  .cc-pane.active { display: flex; }
+
+  /* ---- IDENTITY MANAGER pane ---- */
+  #pane-identity {
+    flex-direction: row;
+    gap: 0;
+  }
+
+  .cc-col {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-right: 1px solid var(--cc-border);
+  }
+  .cc-col:last-child { border-right: none; }
+
+  .cc-col-identity  { flex: 0 0 22%; }
+  .cc-col-profile   { flex: 1; }
+  .cc-col-actions   { flex: 0 0 24%; }
+
+  .cc-col-header {
+    padding: 3px 8px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--amber);
+    border-bottom: 1px dashed var(--cc-border);
+    flex-shrink: 0;
+  }
+
+  .cc-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 6px;
+    min-height: 0;
+  }
+  .cc-scroll::-webkit-scrollbar { width: 3px; }
+  .cc-scroll::-webkit-scrollbar-thumb { background: var(--amber-dim); }
+
+  /* Clickable identity entries in CC */
+  .cc-identity-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 4px;
+    cursor: pointer;
+    font-size: 11px;
+    color: #c8ffc8;
+    border-bottom: 1px dashed rgba(42,42,0,0.5);
+    transition: background 0.1s;
+  }
+  .cc-identity-row:hover { background: rgba(255,153,0,0.06); }
+  .cc-identity-row.selected {
+    background: rgba(255,153,0,0.1);
+    color: var(--amber);
+    text-shadow: 0 0 5px rgba(255,153,0,0.4);
+  }
+  .cc-identity-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green-dim);
+    flex-shrink: 0;
+  }
+  .cc-identity-row.selected .cc-identity-dot { background: var(--amber); }
+
+  /* Profile panel */
+  .cc-profile-stat {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 2px 0;
+    font-size: 11px;
+    border-bottom: 1px dashed rgba(42,42,0,0.4);
+  }
+  .cc-profile-key { color: var(--green-dim); font-size: 10px; letter-spacing: 1px; min-width: 70px; }
+  .cc-profile-val { color: #e0ffe0; }
+  .cc-profile-history-hdr {
+    padding: 4px 0 2px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--amber);
+    border-bottom: 1px solid var(--cc-border);
+    margin-bottom: 2px;
+  }
+  .cc-profile-msg {
+    padding: 2px 0;
+    font-size: 11px;
+    color: #b0efb0;
+    border-bottom: 1px dashed rgba(30,77,0,0.25);
+    word-break: break-word;
+  }
+  .cc-profile-msg .chat-ts { color: var(--green-dim); font-size: 10px; margin-right: 4px; }
+  .cc-placeholder { color: var(--green-dim); font-style: italic; font-size: 11px; padding: 6px 0; }
+
+  /* Actions column */
+  .cc-action-group {
+    padding: 6px 8px;
+    border-bottom: 1px dashed var(--cc-border);
+  }
+  .cc-action-label {
+    font-size: 9px;
+    letter-spacing: 1px;
+    color: var(--green-dim);
+    margin-bottom: 4px;
+  }
+  .cc-input {
+    width: 100%;
+    background: #0c0c0c;
+    border: 1px solid var(--cc-border);
+    color: var(--green);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 3px 5px;
+    margin-bottom: 4px;
+    outline: none;
+  }
+  .cc-input:focus { border-color: var(--amber); }
+  .cc-btn {
+    font-family: inherit;
+    font-size: 10px;
+    padding: 3px 8px;
+    background: none;
+    border: 1px solid var(--green-dim);
+    color: var(--green-dim);
+    cursor: pointer;
+    letter-spacing: 1px;
+    width: 100%;
+    text-align: left;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .cc-btn:hover { color: var(--green); border-color: var(--green); }
+  .cc-btn.warn { border-color: var(--amber-dim); color: var(--amber-dim); }
+  .cc-btn.warn:hover { color: var(--amber); border-color: var(--amber); }
+  .cc-btn.danger { border-color: var(--red-dim); color: var(--red-dim); }
+  .cc-btn.danger:hover { color: var(--red); border-color: var(--red); }
+  .cc-btn:disabled { opacity: 0.35; cursor: default; }
+
+  /* ---- HISTORY QUERY pane ---- */
+  #pane-history {
+    flex-direction: column;
+  }
+  .hist-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--cc-border);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .hist-label { font-size: 10px; color: var(--green-dim); letter-spacing: 1px; white-space: nowrap; }
+  .hist-select, .hist-input {
+    background: #0c0c0c;
+    border: 1px solid var(--cc-border);
+    color: var(--green);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 2px 6px;
+    outline: none;
+  }
+  .hist-select:focus, .hist-input:focus { border-color: var(--amber); }
+  .hist-select { min-width: 120px; }
+  .hist-input  { flex: 1; min-width: 120px; }
+  .hist-results {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 10px;
+    min-height: 0;
+  }
+  .hist-results::-webkit-scrollbar { width: 4px; }
+  .hist-results::-webkit-scrollbar-thumb { background: var(--green-dim); }
+  .hist-row {
+    display: flex;
+    gap: 8px;
+    padding: 2px 0;
+    font-size: 11px;
+    color: #b0f0b0;
+    border-bottom: 1px dashed rgba(30,77,0,0.3);
+    word-break: break-word;
+  }
+  .hist-row-speaker {
+    color: var(--cyan);
+    white-space: nowrap;
+    font-size: 10px;
+    min-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hist-row-ts { color: var(--green-dim); font-size: 10px; white-space: nowrap; }
+  .hist-row-text { flex: 1; }
+  .hist-highlight { background: rgba(255,153,0,0.25); color: var(--amber); }
+
+  /* ---- FACE LOOKUP pane ---- */
+  #pane-lookup {
+    flex-direction: row;
+    gap: 0;
+  }
+  .lookup-left {
+    flex: 0 0 40%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+    border-right: 1px solid var(--cc-border);
+    gap: 8px;
+  }
+  .lookup-dropzone {
+    width: 100%;
+    flex: 1;
+    border: 2px dashed var(--cc-border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--green-dim);
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-align: center;
+    padding: 10px;
+    transition: border-color 0.2s, color 0.2s;
+    position: relative;
+    min-height: 80px;
+  }
+  .lookup-dropzone:hover, .lookup-dropzone.drag-over {
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+  .lookup-dropzone input[type=file] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  #lookup-preview {
+    width: 100%;
+    max-height: 100px;
+    object-fit: contain;
+    display: none;
+    border: 1px solid var(--cc-border);
+  }
+  .lookup-right {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 8px 12px;
+    gap: 6px;
+  }
+  .lookup-result-hdr {
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--amber);
+    border-bottom: 1px dashed var(--cc-border);
+    padding-bottom: 4px;
+  }
+  .lookup-match {
+    font-size: 22px;
+    font-weight: bold;
+    color: var(--green);
+    text-shadow: 0 0 12px var(--green);
+    letter-spacing: 2px;
+  }
+  .lookup-match.no-match { color: var(--red); text-shadow: 0 0 8px var(--red); font-size: 14px; }
+  .lookup-confidence { color: var(--amber); font-size: 13px; }
+  .lookup-all-scores { flex: 1; overflow-y: auto; margin-top: 4px; }
+  .lookup-score-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #b0f0b0;
+    border-bottom: 1px dashed rgba(30,77,0,0.3);
+    padding: 2px 0;
+  }
+  .lookup-score-name { color: var(--green); }
+  .lookup-score-pct  { color: var(--green-dim); }
+  .lookup-score-row.top .lookup-score-pct { color: var(--amber); font-weight: bold; }
+
+  /* Status flash message */
+  #cc-status {
+    position: fixed;
+    bottom: 14px;
+    right: 14px;
+    padding: 5px 12px;
+    border: 1px solid var(--green);
+    background: var(--panel-bg);
+    font-size: 11px;
+    color: var(--green);
+    z-index: 9999;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+  }
+  #cc-status.visible { opacity: 1; }
+  #cc-status.error { border-color: var(--red); color: var(--red); }
+  #cc-status.warn  { border-color: var(--amber); color: var(--amber); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-title">SMART GLASSES :: MONITORING SYSTEM v1.0 <span class="cursor">|</span></div>
+    <div class="header-status">
+      <span id="conn-status" class="online">[SIGNAL NOMINAL]</span>
+      <span id="clock"></span>
+    </div>
+  </div>
+
+  <!-- PANELS -->
+  <div class="panels">
+
+    <!-- Panel 1: Coordinator -->
+    <div class="panel" id="coord-panel">
+      <div class="panel-header">
+        &gt; COORDINATOR LOG
+        <span class="count" id="coord-count">[0]</span>
+      </div>
+      <div class="panel-body" id="coord-log"></div>
+    </div>
+
+    <!-- Panel 2: Workers -->
+    <div class="panel" id="workers-panel">
+      <div class="panel-header">
+        &gt; WORKERS LOG
+        <span class="count" id="workers-count">[0]</span>
+      </div>
+      <div class="panel-body" id="workers-log"></div>
+    </div>
+
+    <!-- Panel 3: Database -->
+    <div class="panel" id="db-panel">
+      <div class="panel-header">&gt; DATABASE STATUS</div>
+      <div class="db-status-bar" id="db-statusbar">DB: WAITING &nbsp;|&nbsp; FACES: - &nbsp;|&nbsp; VOICES: - &nbsp;|&nbsp; CHAT: -</div>
+      <div class="db-panel-body">
+        <div class="db-section users-section">
+          <div class="db-section-header">&gt; REGISTERED IDENTITIES</div>
+          <div class="db-section-body" id="users-list">
+            <div class="empty-msg">-- awaiting data --</div>
+          </div>
+        </div>
+        <div class="db-section chat-section">
+          <div class="db-section-header">&gt; RECENT TRANSMISSIONS</div>
+          <div class="db-section-body" id="chat-list">
+            <div class="empty-msg">-- awaiting data --</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- COMMAND CONSOLE -->
+  <div class="control-center" id="cc">
+
+    <div class="cc-header">
+      <div class="cc-title">&gt; COMMAND CONSOLE</div>
+      <div class="cc-tabs">
+        <span class="cc-tab active" data-tab="identity">IDENTITY MGR</span>
+        <span class="cc-tab" data-tab="history">HISTORY QUERY</span>
+        <span class="cc-tab" data-tab="lookup">FACE LOOKUP</span>
+      </div>
+      <button class="cc-toggle" id="cc-toggle">[COLLAPSE ▼]</button>
+    </div>
+
+    <div class="cc-body-wrap">
+
+      <!-- ── IDENTITY MANAGER ── -->
+      <div class="cc-pane active" id="pane-identity">
+
+        <!-- Left: scrollable identity list -->
+        <div class="cc-col cc-col-identity">
+          <div class="cc-col-header">&gt; IDENTITIES</div>
+          <div class="cc-scroll" id="cc-id-list">
+            <div class="cc-placeholder">-- no data --</div>
+          </div>
+        </div>
+
+        <!-- Middle: profile view -->
+        <div class="cc-col cc-col-profile">
+          <div class="cc-col-header">&gt; PROFILE &nbsp;<span id="cc-profile-name" style="color:var(--green)"></span></div>
+          <div class="cc-scroll" id="cc-profile-body">
+            <div class="cc-placeholder">-- select an identity --</div>
+          </div>
+        </div>
+
+        <!-- Right: actions -->
+        <div class="cc-col cc-col-actions">
+          <div class="cc-col-header">&gt; ACTIONS</div>
+          <div class="cc-scroll">
+
+            <div class="cc-action-group">
+              <div class="cc-action-label">RENAME SELECTED</div>
+              <input class="cc-input" id="cc-rename-input" type="text" placeholder="new name..." maxlength="64" />
+              <button class="cc-btn" id="cc-rename-btn">[EXECUTE RENAME]</button>
+            </div>
+
+            <div class="cc-action-group">
+              <div class="cc-action-label">REMOVE IDENTITY</div>
+              <button class="cc-btn danger" id="cc-delete-btn">[DELETE SELECTED]</button>
+            </div>
+
+            <div class="cc-action-group" style="border-top: 1px solid var(--cc-border); margin-top:4px; padding-top:8px;">
+              <div class="cc-action-label">GLOBAL OPS</div>
+              <button class="cc-btn warn" id="cc-clear-chat-btn" style="margin-bottom:5px">[CLEAR CHAT LOG]</button>
+              <button class="cc-btn danger" id="cc-purge-btn">[PURGE ALL DATA]</button>
+            </div>
+
+          </div>
+        </div>
+
+      </div><!-- /pane-identity -->
+
+      <!-- ── HISTORY QUERY ── -->
+      <div class="cc-pane" id="pane-history">
+        <div class="hist-controls">
+          <span class="hist-label">SPEAKER:</span>
+          <select class="hist-select" id="hist-user-filter">
+            <option value="">-- ALL --</option>
+          </select>
+          <span class="hist-label">SEARCH:</span>
+          <input class="hist-input" id="hist-search-input" type="text" placeholder="keyword..." />
+          <button class="cc-btn" id="hist-clear-btn" style="width:auto;padding:2px 8px">[CLEAR]</button>
+        </div>
+        <div class="hist-results" id="hist-results">
+          <div class="cc-placeholder">-- select a speaker or type a keyword --</div>
+        </div>
+      </div><!-- /pane-history -->
+
+      <!-- ── FACE LOOKUP ── -->
+      <div class="cc-pane" id="pane-lookup">
+        <div class="lookup-left">
+          <div class="lookup-dropzone" id="lookup-dropzone">
+            <input type="file" id="lookup-file-input" accept="image/*" />
+            DROP FACE IMAGE HERE<br>OR CLICK TO UPLOAD
+          </div>
+          <img id="lookup-preview" alt="preview" />
+          <button class="cc-btn" id="lookup-run-btn" disabled>[RUN LOOKUP]</button>
+        </div>
+        <div class="lookup-right">
+          <div class="lookup-result-hdr">&gt; MATCH RESULT</div>
+          <div id="lookup-result-body">
+            <div class="cc-placeholder">-- upload an image to identify --</div>
+          </div>
+        </div>
+      </div><!-- /pane-lookup -->
+
+    </div><!-- /cc-body-wrap -->
+  </div><!-- /control-center -->
+
+</div><!-- /app -->
+
+<!-- Status flash -->
+<div id="cc-status"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  const MAX_LOG_LINES = 500;
+  let coordCount = 0;
+  let workersCount = 0;
+  let ws = null;
+  let reconnectTimer = null;
+
+  // State
+  let allUsers = [];        // [{id, name, has_face, has_voice}]
+  let allChatHistory = [];  // [{id, user_id, user_name, transcript, timestamp}]
+  let selectedUserId = null;
+
+  // ---- Clock ----
+  function updateClock() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2,'0');
+    const m = String(now.getMinutes()).padStart(2,'0');
+    const s = String(now.getSeconds()).padStart(2,'0');
+    document.getElementById('clock').textContent = h + ':' + m + ':' + s;
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // ---- Formatting ----
+  function fmtTs(ts) {
+    const d = new Date(ts * 1000);
+    return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+  function fmtDbTs(ts) {
+    if (!ts) return '';
+    try {
+      const d = new Date(ts);
+      if (isNaN(d.getTime())) return ts.slice(11,19) || ts;
+      return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    } catch(_) { return ts; }
+  }
+  function pad(n) { return String(n).padStart(2,'0'); }
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;');
+  }
+
+  function srcClass(source) {
+    if (!source) return '';
+    const s = source.toLowerCase();
+    if (s.includes('coordinator')) return 'src-coordinator';
+    if (s.includes('system'))      return 'src-system';
+    if (s.includes('audio'))       return 'src-audio';
+    if (s.includes('vision'))      return 'src-vision';
+    if (s.includes('api'))         return 'src-api';
+    return '';
+  }
+
+  // ---- Auto-scroll ----
+  function isNearBottom(el) { return el.scrollHeight - el.scrollTop - el.clientHeight < 60; }
+  function scrollToBottom(el) { el.scrollTop = el.scrollHeight; }
+
+  // ---- Append log line ----
+  function appendLog(container, counterId, source, text, ts) {
+    const nearBottom = isNearBottom(container);
+    const div = document.createElement('div');
+    div.className = 'log-line';
+
+    const tsSpan = document.createElement('span');
+    tsSpan.className = 'log-ts';
+    tsSpan.textContent = '[' + fmtTs(ts) + ']';
+
+    const srcSpan = document.createElement('span');
+    srcSpan.className = 'log-src ' + srcClass(source);
+    srcSpan.textContent = source;
+
+    const txtSpan = document.createElement('span');
+    txtSpan.className = 'log-text';
+    let displayText = text;
+    if (displayText.startsWith(source)) displayText = displayText.slice(source.length).trimStart();
+    txtSpan.textContent = ' ' + displayText;
+
+    div.appendChild(tsSpan);
+    div.appendChild(srcSpan);
+    div.appendChild(txtSpan);
+    container.appendChild(div);
+
+    while (container.children.length > MAX_LOG_LINES) container.removeChild(container.firstChild);
+
+    const el = document.getElementById(counterId);
+    const current = parseInt(el.textContent.replace(/[\[\]]/g,'')) || 0;
+    el.textContent = '[' + (current + 1) + ']';
+
+    if (nearBottom) scrollToBottom(container);
+  }
+
+  // ---- Handle log message ----
+  function handleLog(msg) {
+    const source = msg.source || '';
+    const text   = msg.text   || '';
+    const ts     = msg.ts     || (Date.now() / 1000);
+    const isCoord  = source === '[Coordinator]' || source === '[System]';
+    const isWorker = source === '[AudioWorker]' || source === '[Vision]' || source === '[API Worker]';
+    if (isCoord)  appendLog(document.getElementById('coord-log'),   'coord-count',   source, text, ts);
+    if (isWorker) appendLog(document.getElementById('workers-log'), 'workers-count', source, text, ts);
+  }
+
+  // ---- Handle DB update ----
+  function handleDbUpdate(data) {
+    allUsers       = data.users        || [];
+    allChatHistory = data.chat_history || [];
+
+    const faceCount  = data.face_count  || 0;
+    const voiceCount = data.voice_count || 0;
+    const chatCount  = data.chat_count  || allChatHistory.length;
+
+    // status bar
+    document.getElementById('db-statusbar').innerHTML =
+      'DB: <span>LIVE</span> &nbsp;|&nbsp; FACES: <span>' + faceCount +
+      '</span> &nbsp;|&nbsp; VOICES: <span>' + voiceCount +
+      '</span> &nbsp;|&nbsp; CHAT: <span>' + chatCount + '</span>';
+
+    // original users list panel
+    renderUsersList();
+
+    // original chat list panel
+    renderChatList();
+
+    // sync CC identity list and history dropdowns
+    renderCcIdentityList();
+    rebuildHistoryFilter();
+    applyHistoryFilter();
+  }
+
+  // ---- Original DB panel rendering ----
+  function renderUsersList() {
+    const usersList = document.getElementById('users-list');
+    if (allUsers.length === 0) {
+      usersList.innerHTML = '<div class="empty-msg">-- no identities registered --</div>';
+      return;
+    }
+    usersList.innerHTML = '';
+    allUsers.forEach(function(u) {
+      const div = document.createElement('div');
+      div.className = 'user-entry';
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'user-name';
+      nameSpan.textContent = u.name;
+      div.appendChild(nameSpan);
+      if (u.has_face)  div.appendChild(makeBadge('FACE',  'badge-face'));
+      if (u.has_voice) div.appendChild(makeBadge('VOICE', 'badge-voice'));
+      if (!u.has_face && !u.has_voice) div.appendChild(makeBadge('-', 'badge-none'));
+      usersList.appendChild(div);
+    });
+  }
+
+  function makeBadge(text, cls) {
+    const b = document.createElement('span');
+    b.className = 'badge ' + cls;
+    b.textContent = text;
+    return b;
+  }
+
+  function renderChatList() {
+    const chatList = document.getElementById('chat-list');
+    const wasNearBottom = isNearBottom(chatList);
+    if (allChatHistory.length === 0) {
+      chatList.innerHTML = '<div class="empty-msg">-- no transmissions --</div>';
+      return;
+    }
+    chatList.innerHTML = '';
+    allChatHistory.forEach(function(c) {
+      const div = document.createElement('div');
+      div.className = 'chat-entry';
+      const tsSpan = document.createElement('span');
+      tsSpan.className = 'chat-ts';
+      tsSpan.textContent = '[' + fmtDbTs(c.timestamp) + ']';
+      const txtSpan = document.createElement('span');
+      txtSpan.textContent = escHtml(c.transcript);
+      div.appendChild(tsSpan);
+      div.appendChild(txtSpan);
+      chatList.appendChild(div);
+    });
+    if (wasNearBottom) scrollToBottom(chatList);
+  }
+
+  // ================================================================
+  // COMMAND CONSOLE logic
+  // ================================================================
+
+  // ---- Tab switching ----
+  document.querySelectorAll('.cc-tab').forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      document.querySelectorAll('.cc-tab').forEach(function(t) { t.classList.remove('active'); });
+      document.querySelectorAll('.cc-pane').forEach(function(p) { p.classList.remove('active'); });
+      tab.classList.add('active');
+      document.getElementById('pane-' + tab.dataset.tab).classList.add('active');
+    });
+  });
+
+  // ---- Collapse toggle ----
+  var ccCollapsed = false;
+  document.getElementById('cc-toggle').addEventListener('click', function() {
+    const cc = document.getElementById('cc');
+    ccCollapsed = !ccCollapsed;
+    cc.classList.toggle('collapsed', ccCollapsed);
+    this.textContent = ccCollapsed ? '[EXPAND ▲]' : '[COLLAPSE ▼]';
+  });
+
+  // ---- Identity list in CC ----
+  function renderCcIdentityList() {
+    const list = document.getElementById('cc-id-list');
+    if (allUsers.length === 0) {
+      list.innerHTML = '<div class="cc-placeholder">-- no identities --</div>';
+      selectedUserId = null;
+      renderProfile(null);
+      return;
+    }
+    list.innerHTML = '';
+    allUsers.forEach(function(u) {
+      const row = document.createElement('div');
+      row.className = 'cc-identity-row' + (u.id === selectedUserId ? ' selected' : '');
+      row.dataset.id = u.id;
+
+      const dot = document.createElement('span');
+      dot.className = 'cc-identity-dot';
+      row.appendChild(dot);
+
+      const name = document.createElement('span');
+      name.style.flex = '1';
+      name.style.overflow = 'hidden';
+      name.style.textOverflow = 'ellipsis';
+      name.style.whiteSpace = 'nowrap';
+      name.textContent = u.name;
+      row.appendChild(name);
+
+      if (u.has_face)  row.appendChild(makeBadge('F', 'badge-face'));
+      if (u.has_voice) row.appendChild(makeBadge('V', 'badge-voice'));
+
+      row.addEventListener('click', function() {
+        selectedUserId = u.id;
+        document.querySelectorAll('.cc-identity-row').forEach(function(r) {
+          r.classList.toggle('selected', r.dataset.id === selectedUserId);
+        });
+        loadAndRenderProfile(u);
+      });
+      list.appendChild(row);
+    });
+
+    // if previously selected user still exists, re-render profile with fresh data
+    if (selectedUserId) {
+      const still = allUsers.find(function(u) { return u.id === selectedUserId; });
+      if (still) loadAndRenderProfile(still);
+      else { selectedUserId = null; renderProfile(null); }
+    }
+  }
+
+  function loadAndRenderProfile(u) {
+    document.getElementById('cc-profile-name').textContent = u.name;
+    // count embeddings from allUsers (approximation) — fetch history from API
+    fetch('/api/users/' + encodeURIComponent(u.id) + '/history')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        renderProfile(u, data.history || []);
+      })
+      .catch(function() { renderProfile(u, []); });
+  }
+
+  function renderProfile(u, history) {
+    const body = document.getElementById('cc-profile-body');
+    if (!u) {
+      document.getElementById('cc-profile-name').textContent = '';
+      body.innerHTML = '<div class="cc-placeholder">-- select an identity --</div>';
+      return;
+    }
+
+    const lastMsg = history.length > 0 ? history[history.length - 1] : null;
+    let html = '';
+
+    html += stat('NAME', escHtml(u.name));
+    html += stat('FACE EMB', u.has_face ? '<span style="color:var(--cyan)">YES</span>' : '<span style="color:var(--green-dim)">NO</span>');
+    html += stat('VOICE EMB', u.has_voice ? '<span style="color:var(--yellow-green)">YES</span>' : '<span style="color:var(--green-dim)">NO</span>');
+    html += stat('MESSAGES', String(history.length));
+    html += stat('LAST SEEN', lastMsg ? fmtDbTs(lastMsg.timestamp) : '--');
+
+    if (history.length > 0) {
+      html += '<div class="cc-profile-history-hdr">&gt; TRANSMISSION LOG</div>';
+      // show most recent 30, oldest first
+      const slice = history.slice(-30);
+      slice.forEach(function(h) {
+        html += '<div class="cc-profile-msg"><span class="chat-ts">[' + fmtDbTs(h.timestamp) + ']</span>' + escHtml(h.transcript) + '</div>';
+      });
+    }
+
+    body.innerHTML = html;
+  }
+
+  function stat(key, val) {
+    return '<div class="cc-profile-stat"><span class="cc-profile-key">' + key + '</span><span class="cc-profile-val">' + val + '</span></div>';
+  }
+
+  // ---- Action buttons ----
+  document.getElementById('cc-rename-btn').addEventListener('click', function() {
+    if (!selectedUserId) { flash('SELECT AN IDENTITY FIRST', 'warn'); return; }
+    const newName = document.getElementById('cc-rename-input').value.trim();
+    if (!newName) { flash('ENTER A NAME', 'warn'); return; }
+    fetch('/api/users/' + encodeURIComponent(selectedUserId), {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: newName}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.ok) {
+        document.getElementById('cc-rename-input').value = '';
+        flash('IDENTITY RENAMED', 'ok');
+      } else {
+        flash('ERROR: ' + (d.error || 'unknown'), 'error');
+      }
+    })
+    .catch(function() { flash('REQUEST FAILED', 'error'); });
+  });
+
+  document.getElementById('cc-delete-btn').addEventListener('click', function() {
+    if (!selectedUserId) { flash('SELECT AN IDENTITY FIRST', 'warn'); return; }
+    const u = allUsers.find(function(u) { return u.id === selectedUserId; });
+    const name = u ? u.name : selectedUserId;
+    if (!confirm('DELETE IDENTITY "' + name + '"?\n\nThis removes all face embeddings, voice embeddings, and chat history. This cannot be undone.')) return;
+    fetch('/api/users/' + encodeURIComponent(selectedUserId), { method: 'DELETE' })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.ok) {
+        selectedUserId = null;
+        renderProfile(null);
+        flash('IDENTITY DELETED', 'ok');
+      } else {
+        flash('ERROR: ' + (d.error || 'unknown'), 'error');
+      }
+    })
+    .catch(function() { flash('REQUEST FAILED', 'error'); });
+  });
+
+  document.getElementById('cc-clear-chat-btn').addEventListener('click', function() {
+    if (!confirm('CLEAR ALL CHAT HISTORY?\n\nIdentities and embeddings are preserved. This cannot be undone.')) return;
+    fetch('/api/chat', { method: 'DELETE' })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.ok) flash('CHAT LOG CLEARED', 'ok');
+      else flash('ERROR: ' + (d.error || 'unknown'), 'error');
+    })
+    .catch(function() { flash('REQUEST FAILED', 'error'); });
+  });
+
+  document.getElementById('cc-purge-btn').addEventListener('click', function() {
+    if (!confirm('PURGE ALL DATA?\n\nThis deletes ALL users, embeddings, and chat history. The system must re-register everyone from scratch. THIS CANNOT BE UNDONE.')) return;
+    if (!confirm('CONFIRM: Are you absolutely sure you want to wipe the entire database?')) return;
+    fetch('/api/db', { method: 'DELETE' })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.ok) { selectedUserId = null; flash('DATABASE PURGED', 'ok'); }
+      else flash('ERROR: ' + (d.error || 'unknown'), 'error');
+    })
+    .catch(function() { flash('REQUEST FAILED', 'error'); });
+  });
+
+  // ================================================================
+  // HISTORY QUERY tab
+  // ================================================================
+  function rebuildHistoryFilter() {
+    const sel = document.getElementById('hist-user-filter');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">-- ALL --</option>';
+    allUsers.forEach(function(u) {
+      const opt = document.createElement('option');
+      opt.value = u.id;
+      opt.textContent = u.name;
+      if (u.id === current) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  }
+
+  function applyHistoryFilter() {
+    const uid     = document.getElementById('hist-user-filter').value;
+    const keyword = document.getElementById('hist-search-input').value.trim().toLowerCase();
+    const resultsEl = document.getElementById('hist-results');
+
+    if (!uid && !keyword) {
+      resultsEl.innerHTML = '<div class="cc-placeholder">-- select a speaker or type a keyword --</div>';
+      return;
+    }
+
+    let rows = allChatHistory;
+    if (uid) rows = rows.filter(function(r) { return r.user_id === uid; });
+    if (keyword) rows = rows.filter(function(r) { return r.transcript.toLowerCase().includes(keyword); });
+
+    if (rows.length === 0) {
+      resultsEl.innerHTML = '<div class="cc-placeholder">-- no results --</div>';
+      return;
+    }
+
+    resultsEl.innerHTML = '';
+    rows.forEach(function(r) {
+      const div = document.createElement('div');
+      div.className = 'hist-row';
+
+      const speaker = document.createElement('span');
+      speaker.className = 'hist-row-speaker';
+      speaker.textContent = r.user_name || '';
+
+      const ts = document.createElement('span');
+      ts.className = 'hist-row-ts';
+      ts.textContent = '[' + fmtDbTs(r.timestamp) + ']';
+
+      const text = document.createElement('span');
+      text.className = 'hist-row-text';
+      if (keyword) {
+        const re = new RegExp('(' + keyword.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + ')', 'gi');
+        text.innerHTML = escHtml(r.transcript).replace(re, '<span class="hist-highlight">$1</span>');
+      } else {
+        text.textContent = r.transcript;
+      }
+
+      div.appendChild(speaker);
+      div.appendChild(ts);
+      div.appendChild(text);
+      resultsEl.appendChild(div);
+    });
+    scrollToBottom(resultsEl);
+  }
+
+  document.getElementById('hist-user-filter').addEventListener('change', applyHistoryFilter);
+  document.getElementById('hist-search-input').addEventListener('input', applyHistoryFilter);
+  document.getElementById('hist-clear-btn').addEventListener('click', function() {
+    document.getElementById('hist-user-filter').value = '';
+    document.getElementById('hist-search-input').value = '';
+    applyHistoryFilter();
+  });
+
+  // ================================================================
+  // FACE LOOKUP tab
+  // ================================================================
+  var lookupImageB64 = null;
+
+  function setLookupImage(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      lookupImageB64 = e.target.result; // data URL
+      const preview = document.getElementById('lookup-preview');
+      preview.src = lookupImageB64;
+      preview.style.display = 'block';
+      document.getElementById('lookup-run-btn').disabled = false;
+      document.getElementById('lookup-result-body').innerHTML = '<div class="cc-placeholder">-- ready, press RUN LOOKUP --</div>';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  document.getElementById('lookup-file-input').addEventListener('change', function(e) {
+    if (e.target.files && e.target.files[0]) setLookupImage(e.target.files[0]);
+  });
+
+  var dz = document.getElementById('lookup-dropzone');
+  dz.addEventListener('dragover', function(e) { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', function() { dz.classList.remove('drag-over'); });
+  dz.addEventListener('drop', function(e) {
+    e.preventDefault();
+    dz.classList.remove('drag-over');
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) setLookupImage(file);
+  });
+
+  document.getElementById('lookup-run-btn').addEventListener('click', function() {
+    if (!lookupImageB64) return;
+    const btn = this;
+    btn.disabled = true;
+    btn.textContent = '[SCANNING...]';
+    document.getElementById('lookup-result-body').innerHTML = '<div class="cc-placeholder">-- scanning... --</div>';
+
+    fetch('/api/face_lookup', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({image: lookupImageB64}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      btn.disabled = false;
+      btn.textContent = '[RUN LOOKUP]';
+      renderLookupResult(d);
+    })
+    .catch(function(err) {
+      btn.disabled = false;
+      btn.textContent = '[RUN LOOKUP]';
+      document.getElementById('lookup-result-body').innerHTML =
+        '<div class="cc-placeholder" style="color:var(--red)">-- request failed --</div>';
+    });
+  });
+
+  function renderLookupResult(d) {
+    const body = document.getElementById('lookup-result-body');
+    if (!d.ok) {
+      body.innerHTML = '<div class="lookup-match no-match">NO MATCH</div>' +
+        '<div style="color:var(--green-dim);font-size:11px;margin-top:6px">' + escHtml(d.error || 'Unknown error') + '</div>';
+      return;
+    }
+
+    const threshold = 50; // confidence % below which we call it "no match"
+    const isMatch = d.confidence >= threshold;
+
+    let html = '';
+    if (isMatch) {
+      html += '<div class="lookup-match">' + escHtml(d.match) + '</div>';
+      html += '<div class="lookup-confidence">' + d.confidence + '% CONFIDENCE</div>';
+    } else {
+      html += '<div class="lookup-match no-match">UNKNOWN</div>';
+      html += '<div class="lookup-confidence" style="color:var(--green-dim)">BEST: ' + escHtml(d.match) + ' @ ' + d.confidence + '%</div>';
+    }
+
+    if (d.all_scores && d.all_scores.length > 1) {
+      html += '<div style="margin-top:8px;font-size:10px;color:var(--amber);letter-spacing:1px;border-bottom:1px dashed var(--cc-border);padding-bottom:2px">&gt; ALL SCORES</div>';
+      html += '<div class="lookup-all-scores">';
+      d.all_scores.forEach(function(s, i) {
+        html += '<div class="lookup-score-row' + (i === 0 ? ' top' : '') + '">' +
+          '<span class="lookup-score-name">' + escHtml(s.name) + '</span>' +
+          '<span class="lookup-score-pct">' + s.confidence + '%</span></div>';
+      });
+      html += '</div>';
+    }
+
+    body.innerHTML = html;
+  }
+
+  // ================================================================
+  // Status flash
+  // ================================================================
+  var flashTimer = null;
+  function flash(msg, type) {
+    const el = document.getElementById('cc-status');
+    el.textContent = msg;
+    el.className = 'visible ' + (type === 'error' ? 'error' : type === 'warn' ? 'warn' : '');
+    if (flashTimer) clearTimeout(flashTimer);
+    flashTimer = setTimeout(function() { el.className = ''; }, 2500);
+  }
+
+  // ================================================================
+  // WebSocket
+  // ================================================================
+  function setConnected(ok) {
+    const el = document.getElementById('conn-status');
+    if (ok) {
+      el.textContent = '[SIGNAL NOMINAL]';
+      el.className = 'online';
+    } else {
+      el.textContent = '[SIGNAL LOST — RECONNECTING]';
+      el.className = 'disconnected';
+    }
+  }
+
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = proto + '://' + location.host + '/ws';
+    ws = new WebSocket(url);
+
+    ws.onopen = function() {
+      setConnected(true);
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    };
+
+    ws.onmessage = function(evt) {
+      let msg;
+      try { msg = JSON.parse(evt.data); } catch(_) { return; }
+      if (msg.type === 'log')            handleLog(msg);
+      else if (msg.type === 'db_update') handleDbUpdate(msg);
+    };
+
+    ws.onclose = function() {
+      setConnected(false);
+      ws = null;
+      reconnectTimer = setTimeout(connect, 3000);
+    };
+
+    ws.onerror = function() { ws && ws.close(); };
+  }
+
+  connect();
+})();
+</script>
+</body>
+</html>

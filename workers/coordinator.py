@@ -10,6 +10,7 @@ from collections import deque
 import numpy as np
 
 from core import config
+from core.log_interceptor import install_log_interceptor
 from database.database import DatabaseManager
 from workers.base import BaseWorker
 
@@ -21,8 +22,9 @@ class Coordinator(BaseWorker):
         gemini_commands_queue: mp.Queue,
         vision_commands_queue: mp.Queue,
         audio_commands_queue: mp.Queue,
+        log_queue: mp.Queue = None,
     ):
-        super().__init__()
+        super().__init__(log_queue=log_queue)
         self.events_queue = results_queue
         self.llm_commands_queue = gemini_commands_queue
         self.vision_commands_queue = vision_commands_queue
@@ -66,6 +68,8 @@ class Coordinator(BaseWorker):
         }
 
     def run(self):
+        if self.log_queue is not None:
+            install_log_interceptor(self.log_queue, "[Coordinator]")
         print("[Coordinator] Started")
         self.setup()
 
@@ -120,6 +124,13 @@ class Coordinator(BaseWorker):
             else config.DEFAULT_NAME
         )
 
+        # check if theres speech and we recognize user.
+        if text and user_id != config.DEFAULT_ID:
+            transcript = f"{speaker_name}: {text}"
+            self.db.save_chat_history(user_id, transcript)
+        else:
+            transcript = f"{speaker_name}: {text}"
+
         active_names = set()
         if self.vision_cache:
             _, faces = self.vision_cache[-1]  # Most recent frame
@@ -128,7 +139,7 @@ class Coordinator(BaseWorker):
                 if uid != config.DEFAULT_ID:
                     active_names.add(self.db.get_user_name(uid))
 
-        current_message = f"{speaker_name}: {text}"
+        current_message = transcript
         self.conversation_history.append(current_message)
 
         # NEW: Compile the history into a single string

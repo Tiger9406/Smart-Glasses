@@ -11,6 +11,8 @@ class SharedMem:
         self.audio_command_queue = mp.Queue()
         self.gemini_command_queue = mp.Queue()
 
+        self.log_queue = mp.Queue(maxsize=2000)
+
     def shutdown(self):
         self.vision_queue.cancel_join_thread()
         self.audio_queue.cancel_join_thread()
@@ -19,6 +21,7 @@ class SharedMem:
         self.vision_command_queue.cancel_join_thread()
         self.audio_command_queue.cancel_join_thread()
         self.gemini_command_queue.cancel_join_thread()
+        self.log_queue.cancel_join_thread()
 
         self.vision_queue.close()
         self.audio_queue.close()
@@ -27,5 +30,6 @@ class SharedMem:
         self.vision_command_queue.close()
         self.audio_command_queue.close()
         self.gemini_command_queue.close()
+        self.log_queue.close()
 
         print("[Shared Mem] Queues closed")

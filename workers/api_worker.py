@@ -5,6 +5,7 @@ import time
 
 # from api.gemini_client import GeminiClient
 from api.openai_client import OpenAIClient
+from core.log_interceptor import install_log_interceptor
 from workers.base import IngestionWorker
 from core.config import DEFAULT_NAME
 
@@ -15,8 +16,8 @@ class APIWorker(IngestionWorker):
     Output queue: results_queue events consumed by Coordinator
     """
 
-    def __init__(self, input_queue: mp.Queue, output_queue: mp.Queue):
-        super().__init__(input_queue, output_queue)
+    def __init__(self, input_queue: mp.Queue, output_queue: mp.Queue, log_queue: mp.Queue = None):
+        super().__init__(input_queue, output_queue, log_queue=log_queue)
         # self.client = GeminiClient()
         self.client = OpenAIClient()
         self.loop = None
@@ -27,6 +28,8 @@ class APIWorker(IngestionWorker):
         return self.loop.run_until_complete(routine)
 
     def run(self):
+        if self.log_queue is not None:
+            install_log_interceptor(self.log_queue, "[API Worker]")
         print("[API Worker] Started")
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
