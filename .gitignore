@@ -23,3 +23,22 @@ __pycache__/
 /api/simulator_resources/shrish_introduced.mp4
 /api/simulator_resources/video_slower.py
 /api/simulator_resources/video.mp4
+
+# Media dumped at the repo root — recordings, papers, screen captures.
+# Root-anchored on purpose: the simulator's committed fixtures under
+# api/simulator_resources/ must stay tracked. See ARCHITECTURE.md section 7.
+/*.pdf
+/*.mp4
+/*.mov
+/*.MOV
+/*.m4a
+/*.wav
+
+# Face thumbnails are biometric images of third parties. These must never
+# enter git history — see ROADMAP.md section 9 (BIPA / GDPR Art. 9).
+/database/face_thumbnails/
+
+# Personal working notes, not team artifacts.
+/SMART-GLASSES-CONTEXT.md
+/notes.md
+/RESEARCH.md
