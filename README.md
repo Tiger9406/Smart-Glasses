@@ -4,6 +4,8 @@ Real-time, asycnh ML-based backend designed for smart glasses
 
 **[Link to Hardware Code Repo] (https://github.com/Tiger9406/Smart-Glasses-Hardware/)**
 
+> **Read [ARCHITECTURE.md](ARCHITECTURE.md)** — diagrams of the full data flow
+
 ---
 
 ## Architecture Overview
