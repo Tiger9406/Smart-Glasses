@@ -2,25 +2,33 @@ import multiprocessing as mp
 
 
 class SharedMem:
-    def __init__(self):
+    vision_queue: mp.Queue
+    audio_queue: mp.Queue
+    results_queue: mp.Queue
+    vision_command_queue: mp.Queue
+    audio_command_queue: mp.Queue
+    llm_command_queue: mp.Queue
+    log_queue: mp.Queue
+
+    def __init__(self) -> None:
         self.vision_queue = mp.Queue(maxsize=100)
         self.audio_queue = mp.Queue(maxsize=100)
 
         self.results_queue = mp.Queue()
         self.vision_command_queue = mp.Queue()
         self.audio_command_queue = mp.Queue()
-        self.gemini_command_queue = mp.Queue()
+        self.llm_command_queue = mp.Queue()
 
         self.log_queue = mp.Queue(maxsize=2000)
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         self.vision_queue.cancel_join_thread()
         self.audio_queue.cancel_join_thread()
         self.results_queue.cancel_join_thread()
 
         self.vision_command_queue.cancel_join_thread()
         self.audio_command_queue.cancel_join_thread()
-        self.gemini_command_queue.cancel_join_thread()
+        self.llm_command_queue.cancel_join_thread()
         self.log_queue.cancel_join_thread()
 
         self.vision_queue.close()
@@ -29,7 +37,7 @@ class SharedMem:
 
         self.vision_command_queue.close()
         self.audio_command_queue.close()
-        self.gemini_command_queue.close()
+        self.llm_command_queue.close()
         self.log_queue.close()
 
         print("[Shared Mem] Queues closed")

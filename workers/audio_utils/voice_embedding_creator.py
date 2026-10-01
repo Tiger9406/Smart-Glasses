@@ -2,7 +2,9 @@ import wave
 import numpy as np
 import onnxruntime as ort
 
-def create_and_save_embedding(wav_file_path: str, onnx_model_path: str, output_npy_path: str):
+def create_and_save_embedding(
+    wav_file_path: str, onnx_model_path: str, output_npy_path: str
+) -> None:
     """
     Reads a mono 16kHz WAV file, generates a RedimNet speaker embedding, 
     and saves it to a .npy file.
@@ -27,7 +29,12 @@ def create_and_save_embedding(wav_file_path: str, onnx_model_path: str, output_n
     # 3. Generate the embedding
     print("Generating embedding...")
     # This matches your self.get_embedding() method
-    embedding = session.run(None, {"audio": audio_reshaped})[0][0]
+    first_output = session.run(None, {"audio": audio_reshaped})[0]
+    if not isinstance(first_output, np.ndarray):
+        raise TypeError(
+            f"Expected ndarray from ONNX session, got {type(first_output).__name__}"
+        )
+    embedding = np.asarray(first_output[0])
 
     # 4. Save the embedding to a .npy file
     np.save(output_npy_path, embedding)

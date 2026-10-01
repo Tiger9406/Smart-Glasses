@@ -21,7 +21,7 @@ config["header_audio"] = bytes([config["header_audio"]])
 config["frame_delay"] = 1.0 / config["fps"]
 
 # defining vision
-async def vision_stream(sock: socket.socket, target_addr: tuple):
+async def vision_stream(sock: socket.socket, target_addr: tuple[str, int]) -> None:
     print(f"Opening video file: {config['target_video']}")
     cap = cv2.VideoCapture(config['target_video'])
 
@@ -86,7 +86,7 @@ async def vision_stream(sock: socket.socket, target_addr: tuple):
 
 
 # async func definint audio stream output
-async def audio_stream(sock: socket.socket, target_addr: tuple):
+async def audio_stream(sock: socket.socket, target_addr: tuple[str, int]) -> None:
     print(f"Starting pcm stream target audio file {config['target_audio']}")
     with wave.open(config['target_audio'], "rb") as wf:
         if (
@@ -133,7 +133,7 @@ async def audio_stream(sock: socket.socket, target_addr: tuple):
     print("Audio file closed")
 
 
-async def stream_glasses_data():
+async def stream_glasses_data() -> None:
     print("Simulating Smart Glasses Server")
     # repeatedly send over same deafult image
 

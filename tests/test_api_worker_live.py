@@ -5,14 +5,14 @@ import time
 from workers.api_worker import APIWorker
 
 
-def run_live_test():
-    if not os.getenv("GEMINI_API_KEY"):
-        raise RuntimeError("GEMINI_API_KEY is not set")
+def run_live_test() -> None:
+    if not os.getenv("OPENAI_API_KEY"):
+        raise RuntimeError("OPENAI_API_KEY is not set")
 
     in_q = mp.Queue()
     out_q = mp.Queue()
 
-    worker = APIWorker(in_q, out_q)
+    worker = APIWorker(in_q, out_q, mp.Queue())
     worker.start()
 
     try:

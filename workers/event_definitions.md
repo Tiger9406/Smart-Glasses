@@ -52,7 +52,7 @@ Sent by the Audio worker when human speech parsed
 
 Sent when the Vision-Language Model completes a complex visual reasoning task
 
-* **Source:** Gemini/VLM Worker
+* **Source:** VLM Worker
 * **Purpose:** Provides high-level semantic descriptions of the video feed.
 
 | Key | Type | Description |
@@ -89,7 +89,7 @@ The Coordinator sends these to the `commands_queue` to control sub-workers.
 
 
 
-### 6. API Command Queue (`gemini_command_queue`)
+### 6. API Command Queue (`llm_command_queue`)
 
 Commands sent to `APIWorker`:
 

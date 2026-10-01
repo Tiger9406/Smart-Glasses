@@ -1,10 +1,10 @@
 import asyncio
 
-from api.gemini_client import GeminiClient
+from api.openai_client import OpenAIClient
 
 
-async def run_memory_tests():
-    client = GeminiClient()
+async def run_memory_tests() -> None:
+    client = OpenAIClient()
 
     try:
         print("--- Running Memory Analysis Tests ---")
@@ -31,20 +31,17 @@ async def run_memory_tests():
             "[Alice] Like I said earlier, my trip to Japan was great.\n"
             "[Bob] Yeah, I remember. Also, I forgot to mention, I just adopted a dog named Buster."
         )
-        # We format the known facts exactly as you suggested
         known_facts_2 = "[Alice] Took a trip to Japan."
 
         result2 = await client.analyze_memory(convo_2, known_facts=known_facts_2)
 
         assert isinstance(result2, list), f"Expected a list, got {type(result2)}"
 
-        # Check that the model extracted Bob's new dog
         facts_text = " ".join([item.get("fact", "").lower() for item in result2])
         assert "dog" in facts_text or "buster" in facts_text, (
             "Failed to extract Bob's new dog."
         )
 
-        # Verify the model IGNORED Alice's trip to Japan because it was in known_facts
         japan_mentioned = any(
             "japan" in item.get("fact", "").lower()
             for item in result2

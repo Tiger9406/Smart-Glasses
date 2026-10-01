@@ -4,20 +4,25 @@ from inspireface import FaceInformation
 
 from core import config, config_vision
 from database.database import DatabaseManager
+from workers.vision_utils.matching import best_identity
 
 
 class InspireFaceProcessor:
+    session: isf.InspireFaceSession
+
+    db: DatabaseManager
+    known_faces: dict[str, list[np.ndarray]]
+
     def __init__(
         self,
-        model_type=config_vision.DEFAULT_ISF_MODEL,
-        model_path=None,
-        confidence_threshold=config_vision.CONFIDENCE_THRESHOLD_DETECTION,
-        download_model=False,
-    ):
+        model_type: str = config_vision.DEFAULT_ISF_MODEL,
+        model_path: str | None = None,
+        confidence_threshold: float = config_vision.CONFIDENCE_THRESHOLD_DETECTION,
+        download_model: bool = False,
+    ) -> None:
         if model_path is None:
             model_path = config_vision.get_model_path(model_type)
 
-        self.session = None
         self.db = DatabaseManager()
         self.known_faces = self.db.get_all_faces()
         print(f"[Vision] loaded {len(self.known_faces)} identities from database")
@@ -27,8 +32,12 @@ class InspireFaceProcessor:
         )
 
     def _initialize_model(
-        self, model_type, model_path, confidence_threshold, download_model
-    ):
+        self,
+        model_type: str,
+        model_path: str,
+        confidence_threshold: float,
+        download_model: bool,
+    ) -> None:
         # set up inspireface session
         isf.ignore_check_latest_model(download_model)
         if model_type != "Pikachu" and model_type != "Megatron":
@@ -60,7 +69,7 @@ class InspireFaceProcessor:
         self.session.set_detection_confidence_threshold(confidence_threshold)
         print("[Vision] InspireFace Model initialized")
 
-    def register_identity(self, user_id: str, embedding: np.ndarray):
+    def register_identity(self, user_id: str, embedding: np.ndarray | None) -> None:
         if embedding is None or not isinstance(embedding, np.ndarray):
             print("[Vision][Identity] Failed to register: embedding invalid")
             return
@@ -71,13 +80,15 @@ class InspireFaceProcessor:
         self.db.save_face_embedding(user_id, embedding)
         print(f"[Vision] Saved new face embedding for '{user_id}' to database.")
 
-    def detect_faces(self, image: np.ndarray):
+    def detect_faces(self, image: np.ndarray) -> list[FaceInformation]:
         return self.session.face_detection(image)
 
-    def extract_embedding(self, image: np.ndarray, face_obj: FaceInformation):
+    def extract_embedding(
+        self, image: np.ndarray, face_obj: FaceInformation
+    ) -> np.ndarray:
         return self.session.face_feature_extract(image, face_obj)
 
-    def compare_to_person(self, user_id: str, embedding: np.ndarray):
+    def compare_to_person(self, user_id: str, embedding: np.ndarray) -> float:
         if user_id not in self.known_faces:
             return 0.0
 
@@ -90,17 +101,11 @@ class InspireFaceProcessor:
     def identify_embedding(
         self,
         embedding: np.ndarray,
-        threshold=config_vision.CONFIDENCE_THRESHOLD_MATCHING,
-    ):
-        # given embedding, compare to known faces and return best match name and according score
-        best_score = 0.0
-        best_match = config.DEFAULT_ID
-
-        if self.known_faces:
-            for user_id, _ in self.known_faces.items():
-                score = self.compare_to_person(user_id, embedding)
-                if score > threshold and score > best_score:
-                    best_score = score
-                    best_match = user_id
-
-        return best_match, best_score
+        threshold: float = config_vision.CONFIDENCE_THRESHOLD_MATCHING,
+    ) -> tuple[str, float]:
+        return best_identity(
+            list(self.known_faces),
+            lambda user_id: self.compare_to_person(user_id, embedding),
+            threshold,
+            config.DEFAULT_ID,
+        )

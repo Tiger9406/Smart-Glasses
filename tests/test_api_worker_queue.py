@@ -1,12 +1,14 @@
+import asyncio
 import multiprocessing as mp
 import queue
 import time
+from typing import Any
 
-from workers.api_worker import APIWorker
+from workers.api_worker import APIWorker, LLMClient
 
 
-class FakeGeminiClient:
-    async def parse_intent(self, prompt: str):
+class FakeLLMClient:
+    async def parse_intent(self, prompt: str) -> dict[str, Any]:
         return {
             "cmd": "REGISTER_IDENTITY",
             "args": {
@@ -18,33 +20,48 @@ class FakeGeminiClient:
 
     async def analyze_memory(
         self, conversation_history: str, known_facts: str = "None"
-    ):
+    ) -> list[dict[str, str]]:
         return [{"subject": "Alice", "fact": "Likes sushi"}]
 
-    async def close(self):
+    async def close(self) -> None:
         return None
 
 
-class FailingGeminiClient:
-    async def parse_intent(self, prompt: str):
+class FailingLLMClient:
+    async def parse_intent(self, prompt: str) -> dict[str, Any]:
         raise RuntimeError("boom")
 
     async def analyze_memory(
         self, conversation_history: str, known_facts: str = "None"
-    ):
+    ) -> list[dict[str, str]]:
         raise RuntimeError("boom")
 
-    async def close(self):
+    async def close(self) -> None:
         return None
 
 
 class TestableAPIWorker(APIWorker):
-    def __init__(self, input_queue: mp.Queue, output_queue: mp.Queue, client):
-        super().__init__(input_queue, output_queue)
+    def __init__(
+        self,
+        input_queue: mp.Queue,
+        output_queue: mp.Queue,
+        client: LLMClient,
+        log_queue: mp.Queue,
+    ) -> None:
+        super().__init__(input_queue, output_queue, log_queue)
         self.client = client
 
 
-def assert_queue_empty(q: mp.Queue):
+def attach_loop(worker: APIWorker) -> None:
+    worker.loop = asyncio.new_event_loop()
+
+
+def close_loop(worker: APIWorker) -> None:
+    if worker.loop is not None and not worker.loop.is_closed():
+        worker.loop.close()
+
+
+def assert_queue_empty(q: mp.Queue) -> None:
     try:
         q.get_nowait()
         raise AssertionError("Expected queue to be empty")
@@ -52,69 +69,77 @@ def assert_queue_empty(q: mp.Queue):
         pass
 
 
-def test_process_command_happy_paths():
+def test_process_command_happy_paths() -> None:
     input_q = mp.Queue()
     output_q = mp.Queue()
 
-    worker = APIWorker(input_q, output_q)
-    worker.client = FakeGeminiClient()
+    worker = APIWorker(input_q, output_q, mp.Queue())
+    worker.client = FakeLLMClient()
+    attach_loop(worker)
 
     t0 = time.time()
-    worker._process_command(
-        {
-            "cmd": "PARSE_INTENT",
-            "text": "Hi, I am John",
-            "timestamp": t0,
-            "voice_embedding": [0.1, 0.2],
-        }
-    )
+    try:
+        worker._process_command(
+            {
+                "cmd": "PARSE_INTENT",
+                "text": "Hi, I am John",
+                "timestamp": t0,
+                "voice_embedding": [0.1, 0.2],
+            }
+        )
 
-    evt = output_q.get(timeout=1)
-    assert evt["type"] == "intent"
-    assert evt["cmd"] == "REGISTER_IDENTITY"
-    assert evt["args"]["name"] == "John"
-    assert evt["timestamp"] == t0
-    assert evt["voice_embedding"] == [0.1, 0.2]
+        evt = output_q.get(timeout=1)
+        assert evt["type"] == "intent"
+        assert evt["cmd"] == "REGISTER_IDENTITY"
+        assert evt["args"]["name"] == "John"
+        assert evt["timestamp"] == t0
+        assert evt["voice_embedding"] == [0.1, 0.2]
 
-    worker._process_command(
-        {
-            "cmd": "ANALYZE_MEMORY",
-            "conversation_history": "Alice said she likes sushi",
-            "known_facts": "None",
-            "subject": "Alice",
-        }
-    )
+        worker._process_command(
+            {
+                "cmd": "ANALYZE_MEMORY",
+                "conversation_history": "Alice said she likes sushi",
+                "known_facts": "None",
+                "subject": "Alice",
+            }
+        )
 
-    mem_evt = output_q.get(timeout=1)
-    assert mem_evt["type"] == "memory_result"
-    assert mem_evt["subject"] == "Alice"
-    assert isinstance(mem_evt["facts"], list)
-    assert mem_evt["facts"][0]["subject"] == "Alice"
-    assert "timestamp" in mem_evt
+        mem_evt = output_q.get(timeout=1)
+        assert mem_evt["type"] == "memory_result"
+        assert mem_evt["subject"] == "Alice"
+        assert isinstance(mem_evt["facts"], list)
+        assert mem_evt["facts"][0]["subject"] == "Alice"
+        assert "timestamp" in mem_evt
+    finally:
+        close_loop(worker)
 
 
-def test_process_command_negative_paths():
+def test_process_command_negative_paths() -> None:
     input_q = mp.Queue()
     output_q = mp.Queue()
 
-    worker = APIWorker(input_q, output_q)
-    worker.client = FakeGeminiClient()
+    worker = APIWorker(input_q, output_q, mp.Queue())
+    worker.client = FakeLLMClient()
+    attach_loop(worker)
 
-    worker._process_command({"cmd": "PARSE_INTENT", "text": ""})
-    assert_queue_empty(output_q)
+    try:
+        worker._process_command({"cmd": "PARSE_INTENT", "text": ""})
+        assert_queue_empty(output_q)
 
-    worker._process_command({"cmd": "ANALYZE_MEMORY", "conversation_history": ""})
-    assert_queue_empty(output_q)
+        worker._process_command({"cmd": "ANALYZE_MEMORY", "conversation_history": ""})
+        assert_queue_empty(output_q)
 
-    worker._process_command({"cmd": "UNKNOWN_COMMAND"})
-    assert_queue_empty(output_q)
+        worker._process_command({"cmd": "UNKNOWN_COMMAND"})
+        assert_queue_empty(output_q)
+    finally:
+        close_loop(worker)
 
 
-def test_run_loop_emits_api_error_on_exception():
+def test_run_loop_emits_api_error_on_exception() -> None:
     input_q = mp.Queue()
     output_q = mp.Queue()
 
-    worker = TestableAPIWorker(input_q, output_q, FailingGeminiClient())
+    worker = TestableAPIWorker(input_q, output_q, FailingLLMClient(), mp.Queue())
     worker.start()
 
     input_q.put(
@@ -133,7 +158,7 @@ def test_run_loop_emits_api_error_on_exception():
         worker.join(timeout=1)
 
 
-def run_tests():
+def run_tests() -> None:
     test_process_command_happy_paths()
     test_process_command_negative_paths()
     test_run_loop_emits_api_error_on_exception()
