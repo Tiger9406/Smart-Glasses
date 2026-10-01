@@ -2,8 +2,6 @@
 
 Real-time, asycnh ML-based backend designed for smart glasses
 
-**[Link to Hardware Code Repo] (https://github.com/Tiger9406/Smart-Glasses-Hardware/)**
-
 ---
 
 ## Architecture Overview
@@ -28,15 +26,11 @@ We leverage python's multiprocessing to prevent ML inference from blocking async
 
 Using Python 3.11; other requirements minimal as of rn; reference requirements.txt
 
+Also I recommend using pylance
+
 I'm gonna use venv instead of conda; feel free to use either though
 
-Pip install requirements.txt
-
 First time running may download parakeet & inspireface models
-
-We have full speech-to-text pipeline along with facial recognition pipeline
-
-Coordinator as an agent
 
 ### 1. Clone Repo
 ```bash

@@ -13,6 +13,7 @@ UDP video and audio come in. Vision and audio workers process them. The coordina
 - `frontend/` — monitoring dashboard
 - `workers/` — one process per worker; step sequence in the entry file, details in the helper package
 - `tests/` — unit tests
+- `firmware/` — device code. Separate from this Python server. Not run the same way. Treat it as its own repo.
 
 Worker entry points: `workers/audio.py`, `workers/vision.py`, `workers/coordinator.py`, `workers/api_worker.py`. Base class: `workers/base.py`.
 
@@ -76,6 +77,8 @@ Python 3.11 venv. Run with `PYTHONPATH=. .venv/bin/python`. Use that interpreter
 Workers subclass `multiprocessing.Process`. `__init__` runs in the parent. `setup()` and `run()` run in the child. Do not construct InspireFace, ONNX, Parakeet, asyncio loops, or aiohttp sessions in `__init__`.
 
 `core/` is plumbing only (config, queues, logging). Domain rules stay in worker helpers.
+
+`firmware/` is pretty separate from the rest. It is not run in the same format as this backend. Consider it a separate repo from the server.
 
 A worker file reads as the sequence of steps. Details live in the helper package. Pass owned stateful objects into those functions.
 
