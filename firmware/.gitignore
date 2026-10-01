@@ -11,3 +11,5 @@ include/secrets.h
 *.raw
 *.log
 *.net
+
+.vscode/**
