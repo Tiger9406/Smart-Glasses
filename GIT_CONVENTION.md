@@ -20,12 +20,9 @@ Start the title with one of these:
 
 `[Spike]`, `[Bug]`, `[Task]`, and `[Feature]` are normal tickets. If you cannot describe the finish line in one sitting, it is an `[Epic]`. Open the epic, then open sub-issues for the pieces and put the same tags on those.
 
-<<<<<<< HEAD
 And just because we combined all into one repo, let's have `[Software]` `[Hardware]` `[Firmware]`
 as well.
 
-=======
->>>>>>> f216dc20808e12823f3ba3047c53c026fd9458b8
 ```
 [Task] Type the worker queues
 ```
