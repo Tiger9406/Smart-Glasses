@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart glasses architecture</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #10141b;
+    --bg-raise: #181f2a;
+    --ink: #e8edf4;
+    --muted: #a9b6c6;
+    --line: #2c3848;
+    --link: #9ec5ff;
+    --amber: #e2b56a;
+    --blue: #8eb6ff;
+    --green: #8fd0a8;
+    --code: #d5e4ff;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-padding-top: 58px; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  a { color: var(--link); }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.88em;
+    color: var(--code);
+    background: #141b26;
+    padding: 0.05em 0.35em;
+    border-radius: 4px;
+  }
+  nav.toc {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    align-items: center;
+    padding: 10px 22px;
+    background: rgba(16, 20, 27, 0.94);
+    border-bottom: 1px solid var(--line);
+  }
+  nav.toc a {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 13px;
+  }
+  nav.toc a.active { color: var(--ink); box-shadow: inset 0 -2px 0 var(--amber); }
+  main {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 28px 22px 80px;
+  }
+  h1 { font-size: 32px; font-weight: 650; letter-spacing: -0.02em; margin: 0 0 8px; }
+  h2 {
+    font-size: 22px;
+    font-weight: 650;
+    margin: 42px 0 10px;
+    padding-top: 8px;
+  }
+  h3 { font-size: 16px; font-weight: 650; margin: 22px 0 8px; }
+  p { margin: 0 0 12px; }
+  .lede { color: var(--muted); max-width: 68ch; }
+  figure {
+    margin: 16px 0 8px;
+    background: var(--bg-raise);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px;
+    overflow-x: auto;
+  }
+  figcaption {
+    margin-top: 8px;
+    color: var(--amber);
+    font-size: 14px;
+  }
+  svg { display: block; }
+  .explain { max-width: 78ch; color: var(--ink); }
+  ul.limits { list-style: none; padding: 0; margin: 12px 0; }
+  ul.limits li {
+    margin: 0 0 10px;
+    padding: 10px 12px;
+    background: var(--bg-raise);
+    border-left: 3px solid #6d8298;
+    border-radius: 6px;
+  }
+  ul.limits li.dir { border-left-color: var(--amber); }
+  .tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-right: 8px;
+  }
+  .tag.limit { color: var(--blue); }
+  .tag.dir { color: var(--amber); }
+</style>
+</head>
+<body>
+<nav class="toc" aria-label="Sections">
+  <a href="#what">What it is</a>
+  <a href="#runtime">Runtime</a>
+  <a href="#queues">Queues</a>
+  <a href="#ingress">Ingress</a>
+  <a href="#audio">Audio</a>
+  <a href="#vision">Vision</a>
+  <a href="#coordinator">Coordinator</a>
+  <a href="#api">API worker</a>
+  <a href="#database">Database</a>
+  <a href="#dashboard">Dashboard</a>
+  <a href="#logic">Where logic lives</a>
+  <a href="#offline">Not on the hot path</a>
+  <a href="#limits">Limits and directions</a>
+</nav>
+<main>
+  <h1>Smart glasses architecture</h1>
+  <p class="lede">Host pipeline. UDP in, vision and audio workers, a coordinator, one OpenAI call at a time, sqlite identities, and a dashboard. Prose twin: <a href="../ARCHITECTURE.md">ARCHITECTURE.md</a>.</p>
+
+  <h2 id="what">What it is</h2>
+  <p>A device or <code>python -m api.simulator</code> sends UDP. <code>VisionWorker</code> and <code>AudioWorker</code> run in child processes. <code>Coordinator</code> reads <code>results_queue</code> and writes command queues. <code>APIWorker</code> calls OpenAI. The dashboard thread on port 8765 shows logs and <code>./database/identities.db</code>. Firmware, when it is in the tree, is the device. This process is the host.</p>
+
+  <h2 id="runtime">Runtime</h2>
+  <p><code>main.py</code> builds <code>SharedMem</code>, starts the dashboard thread, loads sample voices when <code>START_WITH_SAMPLE_DATA</code> is set, then starts the four workers and the UDP thread. <code>__init__</code> runs in the parent. <code>setup()</code> and <code>run()</code> run in the child. The code does not call <code>set_start_method</code>. On macOS the default is <code>spawn</code>, so InspireFace, ONNX, and Parakeet are created in <code>setup()</code>.</p>
+  <figure>
+    <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="420" viewBox="0 0 1040 420" role="img">
+      <title>System context: glasses or simulator, host, OpenAI, sqlite, dashboard</title>
+      <defs>
+        <marker id="ctx-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0 L10 5 L0 10 Z" fill="#9aa8b8"/>
+        </marker>
+      </defs>
+      <rect x="28" y="150" width="210" height="110" rx="10" fill="#1b2430" stroke="#3d4f66"/>
+      <text x="133" y="188" text-anchor="middle" fill="#f4f7fb" font-size="16" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">Glasses or simulator</text>
+      <text x="133" y="212" text-anchor="middle" fill="#a9b6c6" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">JPEG and PCM</text>
+      <text x="133" y="232" text-anchor="middle" fill="#a9b6c6" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">header byte + payload</text>
+
+      <rect x="360" y="70" width="300" height="250" rx="10" fill="#1b2430" stroke="#e2b56a"/>
+      <text x="510" y="102" text-anchor="middle" fill="#f4f7fb" font-size="16" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">Host process</text>
+      <text x="510" y="128" text-anchor="middle" fill="#a9b6c6" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">UDP thread 0.0.0.0:8000</text>
+      <text x="510" y="150" text-anchor="middle" fill="#a9b6c6" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">VisionWorker, AudioWorker</text>
+      <text x="510" y="172" text-anchor="middle" fill="#a9b6c6" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">Coordinator, APIWorker</text>
+      <text x="510" y="202" text-anchor="middle" fill="#e8edf4" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">Owns queues, tracks, utterances</text>
+      <text x="510" y="224" text-anchor="middle" fill="#e8edf4" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">Decides identity and intent</text>
+      <text x="510" y="254" text-anchor="middle" fill="#8fd0a8" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">main.py</text>
+      <text x="510" y="276" text-anchor="middle" fill="#8fd0a8" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">workers started as child processes</text>
+
+      <rect x="790" y="36" width="220" height="84" rx="10" fill="#1b2430" stroke="#3d4f66"/>
+      <text x="900" y="68" text-anchor="middle" fill="#f4f7fb" font-size="16" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">OpenAI</text>
+      <text x="900" y="92" text-anchor="middle" fill="#a9b6c6" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">HTTP chat completions</text>
+
+      <rect x="790" y="156" width="220" height="96" rx="10" fill="#1b2430" stroke="#3d4f66"/>
+      <text x="900" y="190" text-anchor="middle" fill="#f4f7fb" font-size="16" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">sqlite</text>
+      <text x="900" y="214" text-anchor="middle" fill="#a9b6c6" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">./database/identities.db</text>
+      <text x="900" y="234" text-anchor="middle" fill="#a9b6c6" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">users, embeddings, chat</text>
+
+      <rect x="790" y="286" width="220" height="96" rx="10" fill="#1b2430" stroke="#3d4f66"/>
+      <text x="900" y="320" text-anchor="middle" fill="#f4f7fb" font-size="16" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">Dashboard</text>
+      <text x="900" y="344" text-anchor="middle" fill="#a9b6c6" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">thread in this process</text>
+      <text x="900" y="364" text-anchor="middle" fill="#a9b6c6" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">port 8765</text>
+
+      <line x1="238" y1="205" x2="356" y2="195" stroke="#8fd0a8" stroke-width="1.6" marker-end="url(#ctx-arr)"/>
+      <text x="292" y="186" text-anchor="middle" fill="#8fd0a8" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">UDP</text>
+
+      <line x1="660" y1="120" x2="786" y2="78" stroke="#8eb6ff" stroke-width="1.6" marker-end="url(#ctx-arr)"/>
+      <text x="730" y="86" text-anchor="middle" fill="#8eb6ff" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">PARSE_INTENT</text>
+
+      <line x1="660" y1="200" x2="786" y2="200" stroke="#8eb6ff" stroke-width="1.6" marker-end="url(#ctx-arr)"/>
+      <text x="722" y="192" text-anchor="middle" fill="#8eb6ff" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">read / write</text>
+
+      <line x1="660" y1="280" x2="786" y2="320" stroke="#c4b0e8" stroke-width="1.6" marker-end="url(#ctx-arr)"/>
+      <text x="710" y="312" text-anchor="middle" fill="#c4b0e8" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">log_queue</text>
+
+      <line x1="900" y1="252" x2="900" y2="282" stroke="#9aa8b8" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#ctx-arr)"/>
+      <text x="968" y="272" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">own read</text>
+    </svg>
+    <figcaption>Glasses or the simulator reach the host over UDP. OpenAI, sqlite, and the dashboard sit beside the workers.</figcaption>
+  </figure>
+  <p class="explain">The host box is <code>main.py</code>: the UDP thread, four workers, and the queues in <code>SharedMem</code>. OpenAI is called from <code>APIWorker</code> after a transcript exists, and from <code>VisionWorker</code> only when <code>VLM_ACTIVE</code> is on. sqlite is the file <code>IDENTITY_DB_PATH</code>. The dashboard is <code>start_monitoring_server</code>, a daemon thread, not a separate service. Its sqlite reads do not share a transaction with the workers.</p>
+
+  <h2 id="queues">Queues and events</h2>
+  <p>Seven queues. Field lists live in <a href="../workers/event_definitions.md">workers/event_definitions.md</a>. On the wire, <code>speech</code> carries <code>user_id</code> and <code>time_start</code>, and <code>vision_result</code> faces carry <code>user_id</code> with no event timestamp.</p>
+  <figure>
+    <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="760" viewBox="0 0 1040 760" role="img">
+      <title>Every queue, who writes it, and who reads it</title>
+      <defs>
+        <marker id="q-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0 L10 5 L0 10 Z" fill="#c5d0dc"/>
+        </marker>
+      </defs>
+      <text x="140" y="28" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">Writes</text>
+      <text x="520" y="28" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">Queue and payload</text>
+      <text x="900" y="28" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">Reads</text>
+
+      <!-- vision_queue -->
+      <rect x="20" y="44" width="240" height="58" rx="8" fill="#1b2430" stroke="#8fd0a8"/>
+      <text x="140" y="68" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">UDP receiver thread</text>
+      <text x="140" y="88" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">api/udp_receiver.py</text>
+      <line x1="268" y1="73" x2="760" y2="73" stroke="#8fd0a8" stroke-width="1.6" marker-end="url(#q-arr)"/>
+      <rect x="400" y="56" width="230" height="34" rx="6" fill="#181f2a"/>
+      <text x="515" y="78" text-anchor="middle" fill="#8fd0a8" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">vision_queue · jpeg</text>
+      <rect x="780" y="44" width="240" height="58" rx="8" fill="#1b2430" stroke="#8eb6ff"/>
+      <text x="900" y="68" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">VisionWorker</text>
+      <text x="900" y="88" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">workers/vision.py</text>
+
+      <!-- audio_queue -->
+      <rect x="20" y="118" width="240" height="58" rx="8" fill="#1b2430" stroke="#8fd0a8"/>
+      <text x="140" y="142" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">UDP receiver thread</text>
+      <text x="140" y="162" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">header byte stripped</text>
+      <line x1="268" y1="147" x2="760" y2="147" stroke="#8fd0a8" stroke-width="1.6" marker-end="url(#q-arr)"/>
+      <rect x="410" y="130" width="210" height="34" rx="6" fill="#181f2a"/>
+      <text x="515" y="152" text-anchor="middle" fill="#8fd0a8" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">audio_queue · pcm</text>
+      <rect x="780" y="118" width="240" height="58" rx="8" fill="#1b2430" stroke="#7ec8c3"/>
+      <text x="900" y="142" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">AudioWorker</text>
+      <text x="900" y="162" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">workers/audio.py</text>
+
+      <!-- vision_result -->
+      <rect x="20" y="192" width="240" height="58" rx="8" fill="#1b2430" stroke="#8eb6ff"/>
+      <text x="140" y="216" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">VisionWorker</text>
+      <text x="140" y="236" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">publish_faces</text>
+      <line x1="268" y1="221" x2="760" y2="221" stroke="#8eb6ff" stroke-width="1.6" marker-end="url(#q-arr)"/>
+      <rect x="360" y="204" width="310" height="34" rx="6" fill="#181f2a"/>
+      <text x="515" y="226" text-anchor="middle" fill="#8eb6ff" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">results_queue · vision_result</text>
+      <rect x="780" y="192" width="240" height="58" rx="8" fill="#1b2430" stroke="#e2b56a"/>
+      <text x="900" y="216" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">Coordinator</text>
+      <text x="900" y="236" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">handle_event</text>
+
+      <!-- speech -->
+      <rect x="20" y="266" width="240" height="58" rx="8" fill="#1b2430" stroke="#7ec8c3"/>
+      <text x="140" y="290" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">AudioWorker</text>
+      <text x="140" y="310" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">finish_utterance</text>
+      <line x1="268" y1="295" x2="760" y2="295" stroke="#8eb6ff" stroke-width="1.6" marker-end="url(#q-arr)"/>
+      <rect x="392" y="278" width="246" height="34" rx="6" fill="#181f2a"/>
+      <text x="515" y="300" text-anchor="middle" fill="#8eb6ff" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">results_queue · speech</text>
+      <rect x="780" y="266" width="240" height="58" rx="8" fill="#1b2430" stroke="#e2b56a"/>
+      <text x="900" y="290" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">Coordinator</text>
+      <text x="900" y="310" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">handle_speech</text>
+
+      <!-- api results -->
+      <rect x="20" y="340" width="240" height="58" rx="8" fill="#1b2430" stroke="#f0a0a8"/>
+      <text x="140" y="364" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">APIWorker</text>
+      <text x="140" y="384" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">intent_event / memory_event</text>
+      <line x1="268" y1="369" x2="760" y2="369" stroke="#8eb6ff" stroke-width="1.6" marker-end="url(#q-arr)"/>
+      <rect x="318" y="352" width="400" height="34" rx="6" fill="#181f2a"/>
+      <text x="518" y="374" text-anchor="middle" fill="#8eb6ff" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">results_queue · intent, api_error, memory_result</text>
+      <rect x="780" y="340" width="240" height="58" rx="8" fill="#1b2430" stroke="#e2b56a"/>
+      <text x="900" y="364" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">Coordinator</text>
+      <text x="900" y="384" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">only reader of results_queue</text>
+
+      <!-- PARSE_INTENT -->
+      <rect x="20" y="414" width="240" height="58" rx="8" fill="#1b2430" stroke="#e2b56a"/>
+      <text x="140" y="438" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">Coordinator</text>
+      <text x="140" y="458" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">handle_speech</text>
+      <line x1="268" y1="443" x2="760" y2="443" stroke="#e2b56a" stroke-width="1.6" marker-end="url(#q-arr)"/>
+      <rect x="352" y="426" width="330" height="34" rx="6" fill="#181f2a"/>
+      <text x="517" y="448" text-anchor="middle" fill="#e2b56a" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">llm_command_queue · PARSE_INTENT</text>
+      <rect x="780" y="414" width="240" height="58" rx="8" fill="#1b2430" stroke="#f0a0a8"/>
+      <text x="900" y="438" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">APIWorker</text>
+      <text x="900" y="458" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">one command at a time</text>
+
+      <!-- vision commands -->
+      <rect x="20" y="488" width="240" height="58" rx="8" fill="#1b2430" stroke="#e2b56a"/>
+      <text x="140" y="512" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">Coordinator</text>
+      <text x="140" y="532" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">register_unknown_face / intent</text>
+      <line x1="268" y1="517" x2="760" y2="517" stroke="#e2b56a" stroke-width="1.6" marker-end="url(#q-arr)"/>
+      <rect x="300" y="500" width="430" height="34" rx="6" fill="#181f2a"/>
+      <text x="515" y="522" text-anchor="middle" fill="#e2b56a" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">vision_command_queue · REGISTER_FACE, GET_VIDEO_CONTEXT</text>
+      <rect x="780" y="488" width="240" height="58" rx="8" fill="#1b2430" stroke="#8eb6ff"/>
+      <text x="900" y="512" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">VisionWorker</text>
+      <text x="900" y="532" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">apply_vision_commands</text>
+
+      <!-- REGISTER_VOICE -->
+      <rect x="20" y="562" width="240" height="58" rx="8" fill="#1b2430" stroke="#e2b56a"/>
+      <text x="140" y="586" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">Coordinator</text>
+      <text x="140" y="606" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">enqueue_register_voice</text>
+      <line x1="268" y1="591" x2="760" y2="591" stroke="#e2b56a" stroke-width="1.6" marker-end="url(#q-arr)"/>
+      <rect x="368" y="574" width="300" height="34" rx="6" fill="#181f2a"/>
+      <text x="518" y="596" text-anchor="middle" fill="#e2b56a" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">audio_command_queue · REGISTER_VOICE</text>
+      <rect x="780" y="562" width="240" height="58" rx="8" fill="#1b2430" stroke="#7ec8c3"/>
+      <text x="900" y="586" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">AudioWorker</text>
+      <text x="900" y="606" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">apply_voice_commands</text>
+
+      <!-- log_queue -->
+      <rect x="20" y="636" width="240" height="58" rx="8" fill="#1b2430" stroke="#c4b0e8"/>
+      <text x="140" y="660" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">Every process print</text>
+      <text x="140" y="680" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">install_log_interceptor</text>
+      <line x1="268" y1="665" x2="760" y2="665" stroke="#c4b0e8" stroke-width="1.6" marker-end="url(#q-arr)"/>
+      <rect x="360" y="648" width="310" height="34" rx="6" fill="#181f2a"/>
+      <text x="515" y="670" text-anchor="middle" fill="#c4b0e8" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">log_queue · source, text, ts</text>
+      <rect x="780" y="636" width="240" height="58" rx="8" fill="#1b2430" stroke="#c4b0e8"/>
+      <text x="900" y="660" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">Dashboard thread</text>
+      <text x="900" y="680" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">_log_drain_loop</text>
+
+      <text x="520" y="732" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">Green is ingress. Blue is results_queue. Amber is a command. Purple is logs. The same process is repeated once per queue it touches.</text>
+    </svg>
+    <figcaption>Each row is one queue: who writes it, the payload kind, and who reads it.</figcaption>
+  </figure>
+  <p class="explain"><code>vision_queue</code> and <code>audio_queue</code> are capped at 100 and drop the oldest datagram when full. <code>results_queue</code> has three writers and one reader: <code>Coordinator.run</code> calls <code>handle_event</code>. <code>ANALYZE_MEMORY</code> is accepted by <code>APIWorker</code> and is not enqueued by the coordinator. <code>vlm_result</code> is also a <code>results_queue</code> event, written by <code>ask_vlm</code> inside the vision process when that path runs. <code>log_queue</code> is capped at 2000 and is not an input to recognition.</p>
+
+  <h2 id="ingress">Ingress</h2>
+  <p><code>udp_receiver_thread</code> binds <code>0.0.0.0:8000</code>. The first byte is <code>HEADER_VISION</code> (<code>b"\x01"</code>) or <code>HEADER_AUDIO</code> (<code>b"\x02"</code>). The rest of the datagram is the payload. The simulator (<code>python -m api.simulator</code>) sends the same bytes from <code>simulator_config.json</code>.</p>
+  <p class="explain">This checkout has no <code>hardware/</code> directory. The firmware imported on <code>task/import-hardware-repo</code> is ESP32-S3 PlatformIO. <code>udp_send_task</code> in <code>hardware/src/udp.cpp</code> prefixes JPEG with <code>WS_FRAME_VIDEO</code> (<code>0x01</code>) and PCM with <code>WS_FRAME_AUDIO_TX</code> (<code>0x02</code>). The camera task pushes JPEG from <code>esp_camera</code>. The audio task queues 16 kHz <code>int16</code> samples. Those header values match <code>core/config.py</code>. The host does not import the firmware. Nothing in this tree checks that the bytes still match.</p>
+
+  <h2 id="audio">Audio</h2>
+  <p><code>AudioWorker.run</code> chunks PCM, runs Silero, and keeps an utterance open until silence. Parakeet transcribes the finished buffer. Redimnet embeds it. <code>identify_speaker</code> picks a user id.</p>
+  <figure>
+    <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="480" viewBox="0 0 1040 480" role="img">
+      <title>Utterance states: silence, pre-speech, in utterance, end of sentence</title>
+      <defs>
+        <marker id="au-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0 L10 5 L0 10 Z" fill="#c5d0dc"/>
+        </marker>
+      </defs>
+      <rect x="36" y="36" width="220" height="88" rx="10" fill="#1b2430" stroke="#7ec8c3"/>
+      <text x="146" y="68" text-anchor="middle" fill="#f4f7fb" font-size="15" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">Silence</text>
+      <text x="146" y="90" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">utterance is None</text>
+      <text x="146" y="108" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">no transcript yet</text>
+
+      <rect x="400" y="36" width="240" height="88" rx="10" fill="#1b2430" stroke="#7ec8c3"/>
+      <text x="520" y="68" text-anchor="middle" fill="#f4f7fb" font-size="15" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">Pre-speech</text>
+      <text x="520" y="90" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">deque, maxlen padding_chunks</text>
+      <text x="520" y="108" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">still no utterance</text>
+
+      <rect x="36" y="250" width="280" height="110" rx="10" fill="#1b2430" stroke="#e2b56a"/>
+      <text x="176" y="284" text-anchor="middle" fill="#f4f7fb" font-size="15" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">In utterance</text>
+      <text x="176" y="308" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">extend_utterance on speech</text>
+      <text x="176" y="328" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">note_silence on a quiet chunk</text>
+      <text x="176" y="348" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">silence_count resets on speech</text>
+
+      <rect x="520" y="250" width="480" height="110" rx="10" fill="#1b2430" stroke="#f0a0a8"/>
+      <text x="760" y="284" text-anchor="middle" fill="#f4f7fb" font-size="15" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">End of sentence</text>
+      <text x="760" y="308" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">silence_count &gt;= SILENT_CHUNK_THRESHOLD (1)</text>
+      <text x="760" y="328" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">reset_vad, finish_utterance</text>
+      <text x="760" y="348" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">Parakeet text, Redimnet, identify_speaker</text>
+
+      <line x1="256" y1="80" x2="396" y2="80" stroke="#8fd0a8" stroke-width="1.6" marker-end="url(#au-arr)"/>
+      <text x="326" y="70" text-anchor="middle" fill="#8fd0a8" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">quiet chunk appended</text>
+
+      <path d="M146 124 V180 H176 V246" fill="none" stroke="#e2b56a" stroke-width="1.6" marker-end="url(#au-arr)"/>
+      <text x="250" y="176" fill="#e2b56a" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">hears_speech: begin_utterance</text>
+
+      <path d="M520 124 V200 H200 V246" fill="none" stroke="#e2b56a" stroke-width="1.6" marker-end="url(#au-arr)"/>
+      <text x="560" y="196" fill="#e2b56a" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">hears_speech: begin_utterance (pad copied, deque cleared)</text>
+
+      <line x1="316" y1="305" x2="516" y2="305" stroke="#f0a0a8" stroke-width="1.6" marker-end="url(#au-arr)"/>
+      <text x="416" y="294" text-anchor="middle" fill="#f0a0a8" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">finish_utterance</text>
+
+      <path d="M760 360 V448 H16 V80 H36" fill="none" stroke="#9aa8b8" stroke-width="1.4" marker-end="url(#au-arr)"/>
+      <text x="400" y="468" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">speech_event or None, utterance cleared, back to silence</text>
+    </svg>
+    <figcaption>Silence fills a pad. Speech opens or extends an utterance. One quiet chunk ends it.</figcaption>
+  </figure>
+  <p class="explain"><code>take_chunks</code> cuts the byte stream at <code>chunk_bytes</code> (160 ms at 16 kHz). <code>hears_speech</code> returns true if any 512-sample Silero window in that chunk is above 0.5. <code>begin_utterance</code> opens <code>transcribe_stream</code> with <code>CONTEXT_LEFT</code> and <code>CONTEXT_RIGHT</code> (64, 64) and copies <code>pre_speech</code>. <code>extend_utterance</code> zeroes <code>silence_count</code>. <code>note_silence</code> increments it and keeps the samples. <code>finish_utterance</code> embeds with <code>voice_embedding</code> and calls <code>identify_speaker</code>, which biases toward <code>last_speaker</code> when that cosine score already beats <code>SIMILARITY_THRESHOLD</code> (0.30). <code>speech_event</code> is skipped when the text is empty.</p>
+
+  <h2 id="vision">Vision</h2>
+  <p><code>VisionWorker.run</code> drains commands, decodes a JPEG, updates tracks, and publishes <code>vision_result</code>. InspireFace detects and embeds. <code>update_tracks</code> decides whether to keep, recheck, or drop a <code>track_id</code>.</p>
+  <figure>
+    <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="280" viewBox="0 0 1040 280" role="img">
+      <title>One face track over time: unknown, recognize, keep, recheck, lost</title>
+      <defs>
+        <marker id="vs-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0 L10 5 L0 10 Z" fill="#c5d0dc"/>
+        </marker>
+      </defs>
+      <line x1="40" y1="48" x2="1000" y2="48" stroke="#3d4f66" stroke-width="1.4"/>
+      <text x="40" y="28" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">time along one track_id</text>
+
+      <rect x="24" y="78" width="170" height="150" rx="10" fill="#1b2430" stroke="#9aa8b8"/>
+      <text x="109" y="108" text-anchor="middle" fill="#f4f7fb" font-size="15" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">Unknown</text>
+      <text x="109" y="134" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">new track_id</text>
+      <text x="109" y="154" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">DEFAULT_ID</text>
+      <text x="109" y="174" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">score 0</text>
+      <text x="109" y="200" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">checked_ts 0</text>
+
+      <line x1="194" y1="150" x2="228" y2="150" stroke="#8eb6ff" stroke-width="1.6" marker-end="url(#vs-arr)"/>
+
+      <rect x="232" y="78" width="180" height="150" rx="10" fill="#1b2430" stroke="#8eb6ff"/>
+      <text x="322" y="108" text-anchor="middle" fill="#f4f7fb" font-size="15" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">Recognize</text>
+      <text x="322" y="134" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">extract_embedding</text>
+      <text x="322" y="154" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">identify_embedding</text>
+      <text x="322" y="180" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">score &gt; 0.5 keeps name</text>
+      <text x="322" y="200" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">else stay unknown</text>
+
+      <line x1="412" y1="150" x2="446" y2="150" stroke="#8fd0a8" stroke-width="1.6" marker-end="url(#vs-arr)"/>
+
+      <rect x="450" y="78" width="160" height="150" rx="10" fill="#1b2430" stroke="#8fd0a8"/>
+      <text x="530" y="108" text-anchor="middle" fill="#f4f7fb" font-size="15" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">Keep</text>
+      <text x="530" y="134" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">reuse ActiveIdentity</text>
+      <text x="530" y="154" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">emb is None</text>
+      <text x="530" y="180" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">last_seen = now</text>
+      <text x="530" y="200" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">no new embedding</text>
+
+      <line x1="610" y1="150" x2="644" y2="150" stroke="#e2b56a" stroke-width="1.6" marker-end="url(#vs-arr)"/>
+
+      <rect x="648" y="78" width="180" height="150" rx="10" fill="#1b2430" stroke="#e2b56a"/>
+      <text x="738" y="108" text-anchor="middle" fill="#f4f7fb" font-size="15" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">Recheck</text>
+      <text x="738" y="134" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">now - checked_ts</text>
+      <text x="738" y="154" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">&gt; 2.0 seconds</text>
+      <text x="738" y="180" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">recognize again</text>
+      <text x="738" y="200" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">may return to unknown</text>
+
+      <line x1="828" y1="150" x2="862" y2="150" stroke="#f0a0a8" stroke-width="1.6" marker-end="url(#vs-arr)"/>
+
+      <rect x="866" y="78" width="150" height="150" rx="10" fill="#1b2430" stroke="#f0a0a8"/>
+      <text x="941" y="108" text-anchor="middle" fill="#f4f7fb" font-size="15" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">Lost</text>
+      <text x="941" y="134" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">unseen &gt; 1.0 s</text>
+      <text x="941" y="154" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">delete track_id</text>
+      <text x="941" y="180" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">from</text>
+      <text x="941" y="200" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">active_identities</text>
+    </svg>
+    <figcaption>One track starts unknown, is recognized, held, rechecked, and dropped when it disappears.</figcaption>
+  </figure>
+  <p class="explain"><code>recognize_frame</code> calls <code>detect_faces</code>, then <code>update_tracks</code>. Recognition runs when <code>user_id</code> is still <code>DEFAULT_ID</code> or when <code>recheck_interval</code> (2.0s, set in <code>VisionWorker.setup</code>) has passed. <code>best_identity</code> keeps the best <code>feature_comparison</code> score above 0.5. <code>publish_faces</code> sends the list and does not add a timestamp. <code>REGISTER_FACE</code> is applied by <code>register_tracked_face</code> before the next frame. <code>GET_VIDEO_CONTEXT</code> calls <code>ask_vlm</code> only when <code>VLM_ACTIVE</code> is true. With it false, <code>apply_vision_commands</code> returns out of the drain. After shutdown, <code>render_annotated_video</code> writes the offline mp4 when <code>SAVE_ANNOTATED_VID</code> is set.</p>
+
+  <h2 id="coordinator">Coordinator</h2>
+  <p><code>Coordinator.run</code> only pulls <code>results_queue</code> and calls <code>handle_event</code>. Speech for an unknown voice tries a pending registration, then a visual association. Every line is recorded and sent as <code>PARSE_INTENT</code>.</p>
+  <figure>
+    <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="560" viewBox="0 0 1040 560" role="img">
+      <title>Unknown voice: pending hit, then visual association, then stay unknown. Always PARSE_INTENT.</title>
+      <defs>
+        <marker id="sp-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0 L10 5 L0 10 Z" fill="#c5d0dc"/>
+        </marker>
+      </defs>
+      <rect x="330" y="16" width="380" height="64" rx="10" fill="#1b2430" stroke="#7ec8c3"/>
+      <text x="520" y="42" text-anchor="middle" fill="#f4f7fb" font-size="15" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">speech, user_id unknown, embedding set</text>
+      <text x="520" y="64" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">remember_unknown_voice into audio_cache</text>
+
+      <line x1="520" y1="80" x2="520" y2="108" stroke="#e2b56a" stroke-width="1.6" marker-end="url(#sp-arr)"/>
+
+      <rect x="300" y="112" width="440" height="72" rx="10" fill="#1b2430" stroke="#e2b56a"/>
+      <text x="520" y="140" text-anchor="middle" fill="#f4f7fb" font-size="15" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">pending_registration_hit?</text>
+      <text x="520" y="164" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">speech time in [0, max_delay) after the trap</text>
+
+      <line x1="300" y1="148" x2="168" y2="210" stroke="#8fd0a8" stroke-width="1.6" marker-end="url(#sp-arr)"/>
+      <text x="210" y="176" fill="#8fd0a8" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">yes</text>
+      <rect x="24" y="214" width="250" height="80" rx="10" fill="#1b2430" stroke="#8fd0a8"/>
+      <text x="149" y="246" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">bind_pending_voice</text>
+      <text x="149" y="268" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">REGISTER_VOICE, clear pending</text>
+
+      <line x1="520" y1="184" x2="520" y2="214" stroke="#f0a0a8" stroke-width="1.6" marker-end="url(#sp-arr)"/>
+      <text x="536" y="204" fill="#f0a0a8" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">no</text>
+
+      <rect x="300" y="218" width="440" height="84" rx="10" fill="#1b2430" stroke="#e2b56a"/>
+      <text x="520" y="248" text-anchor="middle" fill="#f4f7fb" font-size="15" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">associate_voice?</text>
+      <text x="520" y="270" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">1.0 s window around time_start</text>
+      <text x="520" y="288" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">speaking ratio 0.3, else one person at 0.8</text>
+
+      <line x1="740" y1="260" x2="860" y2="300" stroke="#8fd0a8" stroke-width="1.6" marker-end="url(#sp-arr)"/>
+      <text x="800" y="276" fill="#8fd0a8" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">yes</text>
+      <rect x="780" y="304" width="236" height="80" rx="10" fill="#1b2430" stroke="#8fd0a8"/>
+      <text x="898" y="336" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">associate_unknown_voice</text>
+      <text x="898" y="358" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">REGISTER_VOICE for that id</text>
+
+      <line x1="520" y1="302" x2="520" y2="332" stroke="#f0a0a8" stroke-width="1.6" marker-end="url(#sp-arr)"/>
+      <text x="536" y="322" fill="#f0a0a8" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">no</text>
+      <rect x="370" y="336" width="300" height="56" rx="10" fill="#1b2430" stroke="#9aa8b8"/>
+      <text x="520" y="370" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">stay DEFAULT_ID / Unknown</text>
+
+      <path d="M149 294 V408 H520 V424" fill="none" stroke="#8eb6ff" stroke-width="1.5" marker-end="url(#sp-arr)"/>
+      <path d="M898 384 V408 H540" fill="none" stroke="#8eb6ff" stroke-width="1.5"/>
+      <path d="M520 392 V408" fill="none" stroke="#8eb6ff" stroke-width="1.5"/>
+
+      <rect x="250" y="424" width="540" height="110" rx="10" fill="#1b2430" stroke="#8eb6ff"/>
+      <text x="520" y="456" text-anchor="middle" fill="#f4f7fb" font-size="15" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">Always, known or unknown</text>
+      <text x="520" y="480" text-anchor="middle" fill="#e8edf4" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">record_transcript</text>
+      <text x="520" y="502" text-anchor="middle" fill="#e8edf4" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">enqueue PARSE_INTENT with intent_prompt</text>
+      <text x="520" y="522" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">names_in_view from the latest vision cache frame</text>
+    </svg>
+    <figcaption>Unknown embedding: pending hit, then visual association, otherwise stay unknown. Then always record and enqueue PARSE_INTENT.</figcaption>
+  </figure>
+  <p class="explain"><code>handle_speech</code> uses <code>user_id</code>, <code>time_start</code>, and <code>embedding</code>. <code>bind_pending_voice</code> calls <code>pending_registration_hit</code> with <code>max_delay</code> (20 seconds, set in <code>Coordinator.setup</code>). <code>associate_voice</code> counts <code>is_speaking</code> and presence over frames within 1 second of <code>time_start</code>. Faces published by <code>update_tracks</code> have no <code>is_speaking</code> key, so the 0.3 speaking branch does not see speech. The 0.8 presence branch can still return the only known person. <code>record_transcript</code> writes sqlite chat history only for a known user. <code>intent_prompt</code> prepends known names from <code>names_in_view</code>.</p>
+
+  <h3>Identity registration</h3>
+  <figure>
+    <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="640" viewBox="0 0 1040 640" role="img">
+      <title>REGISTER_IDENTITY: existing name, new user, and who registers the voice</title>
+      <defs>
+        <marker id="id-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0 L10 5 L0 10 Z" fill="#c5d0dc"/>
+        </marker>
+      </defs>
+      <rect x="340" y="12" width="360" height="52" rx="10" fill="#1b2430" stroke="#e2b56a"/>
+      <text x="520" y="44" text-anchor="middle" fill="#f4f7fb" font-size="15" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="650">REGISTER_IDENTITY</text>
+
+      <line x1="430" y1="64" x2="250" y2="100" stroke="#8eb6ff" stroke-width="1.5" marker-end="url(#id-arr)"/>
+      <text x="300" y="84" fill="#8eb6ff" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">name exists</text>
+      <line x1="610" y1="64" x2="790" y2="100" stroke="#8fd0a8" stroke-width="1.5" marker-end="url(#id-arr)"/>
+      <text x="680" y="84" fill="#8fd0a8" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">new name</text>
+
+      <rect x="24" y="104" width="470" height="70" rx="10" fill="#1b2430" stroke="#8eb6ff"/>
+      <text x="259" y="132" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">bind_existing_identity</text>
+      <text x="259" y="154" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">get_user_ids_by_name</text>
+
+      <rect x="546" y="104" width="470" height="70" rx="10" fill="#1b2430" stroke="#8fd0a8"/>
+      <text x="781" y="132" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">create_identity</text>
+      <text x="781" y="154" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">uuid, create_user, register_unknown_face</text>
+
+      <line x1="259" y1="174" x2="259" y2="204" stroke="#8eb6ff" stroke-width="1.5" marker-end="url(#id-arr)"/>
+      <rect x="24" y="208" width="470" height="86" rx="10" fill="#1b2430" stroke="#8eb6ff"/>
+      <text x="259" y="236" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">face or voice match?</text>
+      <text x="259" y="258" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">closest_frame + face_matches</text>
+      <text x="259" y="276" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">or voice_matches cosine &gt; 0.30 on self-intro</text>
+
+      <line x1="120" y1="294" x2="120" y2="328" stroke="#8fd0a8" stroke-width="1.5" marker-end="url(#id-arr)"/>
+      <text x="132" y="318" fill="#8fd0a8" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">yes</text>
+      <rect x="24" y="332" width="220" height="120" rx="10" fill="#1b2430" stroke="#8fd0a8"/>
+      <text x="134" y="358" text-anchor="middle" fill="#f4f7fb" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">matched id</text>
+      <text x="134" y="380" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">missing face:</text>
+      <text x="134" y="398" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">REGISTER_FACE</text>
+      <text x="134" y="422" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">self-intro voice missing:</text>
+      <text x="134" y="440" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">REGISTER_VOICE</text>
+
+      <line x1="400" y1="294" x2="400" y2="328" stroke="#f0a0a8" stroke-width="1.5" marker-end="url(#id-arr)"/>
+      <text x="412" y="318" fill="#f0a0a8" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">no</text>
+      <rect x="274" y="332" width="220" height="120" rx="10" fill="#1b2430" stroke="#f0a0a8"/>
+      <text x="384" y="358" text-anchor="middle" fill="#f4f7fb" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">no match</text>
+      <text x="384" y="382" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">USER_NAME speaker:</text>
+      <text x="384" y="400" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">pending trap on first id</text>
+      <text x="384" y="424" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">anyone else: return</text>
+
+      <line x1="781" y1="174" x2="781" y2="204" stroke="#8fd0a8" stroke-width="1.5" marker-end="url(#id-arr)"/>
+      <rect x="546" y="208" width="470" height="56" rx="10" fill="#1b2430" stroke="#8fd0a8"/>
+      <text x="781" y="242" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">Who registers the voice?</text>
+
+      <rect x="546" y="290" width="470" height="64" rx="10" fill="#1b2430" stroke="#7ec8c3"/>
+      <text x="781" y="316" text-anchor="middle" fill="#f4f7fb" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">Unknown self-intro</text>
+      <text x="781" y="338" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">speaker_name is Unknown: REGISTER_VOICE now</text>
+
+      <rect x="546" y="370" width="470" height="78" rx="10" fill="#1b2430" stroke="#e2b56a"/>
+      <text x="781" y="396" text-anchor="middle" fill="#f4f7fb" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">Wearer names someone</text>
+      <text x="781" y="418" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">speaker_name is USER_NAME (Tiger)</text>
+      <text x="781" y="436" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">attempt_voice_registration</text>
+
+      <rect x="546" y="464" width="470" height="56" rx="10" fill="#1b2430" stroke="#9aa8b8"/>
+      <text x="781" y="488" text-anchor="middle" fill="#f4f7fb" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">Other speaker</text>
+      <text x="781" y="508" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">face only, no voice command</text>
+
+      <rect x="24" y="490" width="470" height="120" rx="10" fill="#1b2430" stroke="#e2b56a"/>
+      <text x="259" y="518" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">Pending trap, next unknown speech</text>
+      <text x="259" y="542" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">resolve_unknown_voice looks in audio_cache</text>
+      <text x="259" y="562" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">else pending_voice_registration</text>
+      <text x="259" y="582" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">later bind_pending_voice sends REGISTER_VOICE</text>
+    </svg>
+    <figcaption>Existing name must match a face or a voice. A new user registers voice on an Unknown self-intro, or waits when the wearer names someone.</figcaption>
+  </figure>
+  <p class="explain"><code>register_identity</code> branches on <code>get_user_ids_by_name</code>. A match uses the first id where <code>face_matches</code> or <code>voice_is_known</code> is true. <code>voice_matches</code> compares the intent's embedding to the mean stored voice. <code>register_unknown_face</code> picks an unknown face on that closest frame with <code>resolve_unknown_face</code> and enqueues <code>REGISTER_FACE</code>. On that match, a self-intro whose voice is not stored enqueues <code>REGISTER_VOICE</code>. If that branch does not run and <code>speaker_name</code> is <code>USER_NAME</code>, <code>attempt_voice_registration</code> runs. <code>create_identity</code> registers voice immediately only when <code>speaker_name</code> is <code>DEFAULT_NAME</code> and <code>is_self_introduction</code> is true. <code>USER_NAME</code> on a new user uses the same attempt: a cached unknown embedding in <code>[0, max_delay]</code>, or the pending record that <code>bind_pending_voice</code> consumes later.</p>
+
+  <h3>One sentence, both streams</h3>
+  <figure>
+    <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="360" viewBox="0 0 1040 360" role="img">
+      <title>One sentence: a PCM chunk and a JPEG frame through workers to an optional REGISTER_IDENTITY</title>
+      <defs>
+        <marker id="tl-arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0 L10 5 L0 10 Z" fill="#c5d0dc"/>
+        </marker>
+      </defs>
+      <text x="16" y="78" fill="#7ec8c3" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">audio</text>
+      <text x="16" y="168" fill="#8eb6ff" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">video</text>
+
+      <rect x="70" y="48" width="130" height="52" rx="8" fill="#1b2430" stroke="#7ec8c3"/>
+      <text x="135" y="70" text-anchor="middle" fill="#f4f7fb" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">UDP PCM</text>
+      <text x="135" y="88" text-anchor="middle" fill="#a9b6c6" font-size="11" font-family="ui-sans-serif, system-ui, sans-serif">HEADER_AUDIO</text>
+      <line x1="200" y1="74" x2="228" y2="74" stroke="#7ec8c3" marker-end="url(#tl-arr)"/>
+      <rect x="232" y="48" width="140" height="52" rx="8" fill="#1b2430" stroke="#7ec8c3"/>
+      <text x="302" y="70" text-anchor="middle" fill="#f4f7fb" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">audio_queue</text>
+      <text x="302" y="88" text-anchor="middle" fill="#a9b6c6" font-size="11" font-family="ui-sans-serif, system-ui, sans-serif">take_chunks</text>
+      <line x1="372" y1="74" x2="400" y2="74" stroke="#7ec8c3" marker-end="url(#tl-arr)"/>
+      <rect x="404" y="40" width="170" height="68" rx="8" fill="#1b2430" stroke="#7ec8c3"/>
+      <text x="489" y="64" text-anchor="middle" fill="#f4f7fb" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">VAD until silence</text>
+      <text x="489" y="84" text-anchor="middle" fill="#a9b6c6" font-size="11" font-family="ui-sans-serif, system-ui, sans-serif">finish_utterance</text>
+      <line x1="574" y1="74" x2="602" y2="74" stroke="#7ec8c3" marker-end="url(#tl-arr)"/>
+      <rect x="606" y="48" width="120" height="52" rx="8" fill="#1b2430" stroke="#8eb6ff"/>
+      <text x="666" y="70" text-anchor="middle" fill="#f4f7fb" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">speech</text>
+      <text x="666" y="88" text-anchor="middle" fill="#a9b6c6" font-size="11" font-family="ui-sans-serif, system-ui, sans-serif">results_queue</text>
+
+      <rect x="70" y="140" width="130" height="52" rx="8" fill="#1b2430" stroke="#8eb6ff"/>
+      <text x="135" y="162" text-anchor="middle" fill="#f4f7fb" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">UDP JPEG</text>
+      <text x="135" y="180" text-anchor="middle" fill="#a9b6c6" font-size="11" font-family="ui-sans-serif, system-ui, sans-serif">HEADER_VISION</text>
+      <line x1="200" y1="166" x2="228" y2="166" stroke="#8eb6ff" marker-end="url(#tl-arr)"/>
+      <rect x="232" y="140" width="140" height="52" rx="8" fill="#1b2430" stroke="#8eb6ff"/>
+      <text x="302" y="162" text-anchor="middle" fill="#f4f7fb" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">vision_queue</text>
+      <text x="302" y="180" text-anchor="middle" fill="#a9b6c6" font-size="11" font-family="ui-sans-serif, system-ui, sans-serif">decode_frame</text>
+      <line x1="372" y1="166" x2="400" y2="166" stroke="#8eb6ff" marker-end="url(#tl-arr)"/>
+      <rect x="404" y="140" width="170" height="52" rx="8" fill="#1b2430" stroke="#8eb6ff"/>
+      <text x="489" y="162" text-anchor="middle" fill="#f4f7fb" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">recognize_frame</text>
+      <text x="489" y="180" text-anchor="middle" fill="#a9b6c6" font-size="11" font-family="ui-sans-serif, system-ui, sans-serif">update_tracks</text>
+      <line x1="574" y1="166" x2="602" y2="166" stroke="#8eb6ff" marker-end="url(#tl-arr)"/>
+      <rect x="606" y="140" width="150" height="52" rx="8" fill="#1b2430" stroke="#8eb6ff"/>
+      <text x="681" y="162" text-anchor="middle" fill="#f4f7fb" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">vision_result</text>
+      <text x="681" y="180" text-anchor="middle" fill="#a9b6c6" font-size="11" font-family="ui-sans-serif, system-ui, sans-serif">vision cache</text>
+
+      <line x1="726" y1="74" x2="790" y2="230" stroke="#e2b56a" stroke-width="1.5" marker-end="url(#tl-arr)"/>
+      <line x1="756" y1="166" x2="800" y2="230" stroke="#e2b56a" stroke-width="1.5" marker-end="url(#tl-arr)"/>
+
+      <rect x="790" y="214" width="220" height="70" rx="8" fill="#1b2430" stroke="#e2b56a"/>
+      <text x="900" y="242" text-anchor="middle" fill="#f4f7fb" font-size="13" font-family="ui-sans-serif, system-ui, sans-serif">Coordinator line</text>
+      <text x="900" y="262" text-anchor="middle" fill="#a9b6c6" font-size="11" font-family="ui-sans-serif, system-ui, sans-serif">handle_speech</text>
+
+      <line x1="900" y1="284" x2="900" y2="308" stroke="#f0a0a8" marker-end="url(#tl-arr)"/>
+      <rect x="790" y="312" width="220" height="36" rx="8" fill="#1b2430" stroke="#f0a0a8"/>
+      <text x="900" y="334" text-anchor="middle" fill="#f4f7fb" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">optional REGISTER_IDENTITY</text>
+    </svg>
+    <figcaption>A PCM chunk and a JPEG can arrive together. Vision publishes per frame. Speech waits for silence. Registration is optional and later.</figcaption>
+  </figure>
+  <p class="explain">The frame path is <code>decode_frame</code>, <code>recognize_frame</code>, <code>publish_faces</code>, then <code>handle_vision_result</code>, which stamps the cache with <code>time.time()</code> on receipt. The audio path does not emit until <code>finish_utterance</code>. <code>handle_speech</code> prints the speaker line and enqueues <code>PARSE_INTENT</code>. <code>APIWorker</code> later writes <code>intent</code>. Only if that <code>cmd</code> is <code>REGISTER_IDENTITY</code> does <code>register_identity</code> run and possibly enqueue <code>REGISTER_FACE</code> or <code>REGISTER_VOICE</code>. <code>SPEAK</code> only prints. <code>VISION_CONTEXT</code> enqueues <code>GET_VIDEO_CONTEXT</code>.</p>
+
+  <h2 id="api">API worker</h2>
+  <p><code>APIWorker.run</code> creates the asyncio loop and handles one <code>llm_command_queue</code> item at a time. <code>PARSE_INTENT</code> calls <code>OpenAIClient.parse_intent</code>. <code>ANALYZE_MEMORY</code> calls <code>analyze_memory</code>. Shaping is <code>intent_event</code> and <code>memory_event</code> in <code>workers/api_utils/commands.py</code>. HTTP lives in <code>api/openai_client.py</code>. The client is OpenAI only.</p>
+  <p class="explain">An exception in the command loop becomes one <code>api_error</code> on <code>results_queue</code>. A <code>None</code> intent is not queued. <code>handle_event</code> logs <code>api_error</code> and has no branch for <code>memory_result</code>. The aiohttp session is opened inside the child on the first request. <code>run_until_complete</code> does not poll <code>self.running</code>, so shutdown's 1 second <code>join</code> often ends in <code>terminate()</code> during a call.</p>
+
+  <h2 id="database">Database</h2>
+  <p><code>DatabaseManager</code> stores <code>users</code>, <code>face_embeddings</code>, <code>voice_embeddings</code>, and <code>chat_history</code> in <code>./database/identities.db</code>. Foreign keys cascade. <code>START_WITH_SAMPLE_DATA</code> is true: startup loads Tiger's sample voice embeddings, and Ctrl+C calls <code>clear_db()</code> before the workers stop. That delete wipes the live file, including identities created during the run.</p>
+
+  <h2 id="dashboard">Dashboard</h2>
+  <p>The page shows coordinator and system logs, worker logs, identity rows, and recent chat. It also renames, deletes, and looks up faces. Routes are in <a href="../frontend/AGENTS.md">frontend/AGENTS.md</a>. It reads <code>log_queue</code> and the same sqlite file on its own connections.</p>
+  <figure>
+    <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="160" viewBox="0 0 1040 160" role="img">
+      <title>log_queue drained to a websocket</title>
+      <defs>
+        <marker id="lg-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0 L10 5 L0 10 Z" fill="#c5d0dc"/>
+        </marker>
+      </defs>
+      <rect x="24" y="44" width="200" height="72" rx="10" fill="#1b2430" stroke="#c4b0e8"/>
+      <text x="124" y="74" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">worker print</text>
+      <text x="124" y="96" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">source, text, ts</text>
+      <line x1="224" y1="80" x2="292" y2="80" stroke="#c4b0e8" stroke-width="1.6" marker-end="url(#lg-arr)"/>
+      <rect x="296" y="44" width="200" height="72" rx="10" fill="#1b2430" stroke="#c4b0e8"/>
+      <text x="396" y="74" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">log_queue</text>
+      <text x="396" y="96" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">maxsize 2000</text>
+      <line x1="496" y1="80" x2="564" y2="80" stroke="#c4b0e8" stroke-width="1.6" marker-end="url(#lg-arr)"/>
+      <rect x="568" y="44" width="210" height="72" rx="10" fill="#1b2430" stroke="#c4b0e8"/>
+      <text x="673" y="74" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">_log_drain_loop</text>
+      <text x="673" y="96" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">type log</text>
+      <line x1="778" y1="80" x2="846" y2="80" stroke="#c4b0e8" stroke-width="1.6" marker-end="url(#lg-arr)"/>
+      <rect x="850" y="44" width="166" height="72" rx="10" fill="#1b2430" stroke="#c4b0e8"/>
+      <text x="933" y="74" text-anchor="middle" fill="#f4f7fb" font-size="14" font-family="ui-sans-serif, system-ui, sans-serif">/ws</text>
+      <text x="933" y="96" text-anchor="middle" fill="#a9b6c6" font-size="12" font-family="ui-sans-serif, system-ui, sans-serif">browser</text>
+    </svg>
+    <figcaption>Prints become log_queue items, then websocket messages. The page does not send any.</figcaption>
+  </figure>
+  <p class="explain"><code>install_log_interceptor</code> keeps the real <code>print</code> and <code>put_nowait</code>s onto <code>log_queue</code>. <code>_log_drain_loop</code> broadcasts those dicts. <code>_db_poll_loop</code> pushes a sqlite snapshot every 5 seconds on the same socket. That snapshot is a separate read, not a commit shared with <code>save_chat_history</code> or <code>save_face_embedding</code>.</p>
+
+  <h2 id="logic">Where the logic lives</h2>
+  <p>The worker file is the sequence: <code>workers/audio.py</code>, <code>workers/vision.py</code>, <code>workers/coordinator.py</code>, <code>workers/api_worker.py</code>. Helpers take the owned objects as arguments. Audio decisions are in <code>workers/audio_utils/</code> (<code>vad.py</code>, <code>utterance.py</code>, <code>speaker.py</code>). Vision decisions are in <code>workers/vision_utils/</code> (<code>pipeline.py</code>, <code>tracks.py</code>, <code>matching.py</code>, <code>inspireface_processor.py</code>). Coordinator decisions are in <code>workers/coordinator_utils/handlers.py</code> and <code>association.py</code>. Event dicts for the API worker are built in <code>workers/api_utils/commands.py</code>. <code>core/</code> holds config, <code>SharedMem</code>, and the log interceptor.</p>
+
+  <h2 id="offline">Not on the hot path</h2>
+  <p><code>voice_embedding_creator.py</code> writes a Redimnet <code>.npy</code> from a wav. The live embed is <code>voice_embedding</code> in <code>vad.py</code>. <code>get_embedding.py</code> extracts one face from a sample image. <code>facial_processing_demos</code> is not in this checkout, and <code>VisionWorker</code> does not import it. <code>tests/test_openai_tool.py</code>, <code>tests/test_openai_memory.py</code>, and <code>tests/test_api_worker_live.py</code> call OpenAI outside the running pipeline.</p>
+
+  <h2 id="limits">Limits and directions</h2>
+  <ul class="limits">
+    <li><span class="tag limit">Limit</span> Workers are <code>multiprocessing.Process</code> and the code never calls <code>set_start_method</code>. On macOS the default is <code>spawn</code>, so the child only unpickles what <code>__init__</code> stored. InspireFace, Silero, Redimnet, and Parakeet are created in <code>setup()</code> inside that child.</li>
+    <li><span class="tag limit">Limit</span> Shutdown <code>join</code>s every worker for 1 second and <code>terminate</code>s whoever is still alive. <code>APIWorker</code> blocks in <code>run_until_complete</code> for the HTTP call and does not see <code>running</code> until the call returns, so <code>client.close()</code> is skipped.</li>
+    <li class="dir"><span class="tag dir">Direction</span> Join the API worker through the end of <code>run()</code> without <code>terminate</code>, so the in-flight call finishes and <code>client.close()</code> runs.</li>
+    <li><span class="tag limit">Limit</span> <code>START_WITH_SAMPLE_DATA</code> is true. On Ctrl+C, <code>main.py</code> calls <code>clear_db()</code> on <code>./database/identities.db</code> before workers stop. <code>DELETE FROM users</code> cascades to embeddings and chat history, including people registered in that run.</li>
+    <li class="dir"><span class="tag dir">Direction</span> Stop calling <code>clear_db()</code> on the live database when sample data was loaded.</li>
+    <li><span class="tag limit">Limit</span> An existing name is checked with <code>closest_frame</code> and <code>face_matches</code>, or one cosine in <code>voice_matches</code> (0.30). <code>identify_speaker</code> is one embedding against stored means, plus a last-speaker bias. <code>associate_voice</code> returns an id or <code>None</code> from a 1.0 second window, a 0.3 speaking ratio, or a 0.8 presence ratio. Live faces omit <code>is_speaking</code>, so the speaking ratio stays at zero. This is not a tracked conversation.</li>
+    <li class="dir"><span class="tag dir">Direction</span> Return an association score from <code>associate_voice</code> with the id, instead of a bare id.</li>
+    <li><span class="tag limit">Limit</span> End of sentence is <code>silence_count &gt;= SILENT_CHUNK_THRESHOLD</code>, and that constant is 1. One quiet chunk calls <code>finish_utterance</code>.</li>
+    <li class="dir"><span class="tag dir">Direction</span> Decide the sentence boundary with more than <code>SILENT_CHUNK_THRESHOLD</code>.</li>
+    <li><span class="tag limit">Limit</span> <code>ANALYZE_MEMORY</code> and <code>memory_event</code> already build a <code>memory_result</code> with <code>subject</code> and <code>facts</code>. The coordinator never enqueues that command, and <code>handle_event</code> has no <code>memory_result</code> handler. Facts are not stored.</li>
+    <li class="dir"><span class="tag dir">Direction</span> Apply that <code>memory_result</code> as a small per-person fact record. The API worker already shapes the event.</li>
+    <li><span class="tag limit">Limit</span> This checkout has no <code>hardware/</code> tree. Imported <code>hardware/src/udp.cpp</code> uses <code>WS_FRAME_VIDEO</code> <code>0x01</code> and <code>WS_FRAME_AUDIO_TX</code> <code>0x02</code>. <code>core/config.py</code> uses <code>HEADER_VISION</code> and <code>HEADER_AUDIO</code> for the same bytes. Nothing compares them. The device and the host meet only at that byte.</li>
+    <li class="dir"><span class="tag dir">Direction</span> One contract test that the header bytes in <code>hardware/src/udp.cpp</code> match <code>core/config.py</code>.</li>
+  </ul>
+</main>
+<script>
+(function () {
+  var links = document.querySelectorAll("nav.toc a");
+  var sections = [];
+  links.forEach(function (a) {
+    var el = document.getElementById(a.getAttribute("href").slice(1));
+    if (el) sections.push({ el: el, a: a });
+  });
+  function mark() {
+    var current = sections[0];
+    sections.forEach(function (s) {
+      if (s.el.getBoundingClientRect().top <= 70) current = s;
+    });
+    links.forEach(function (a) { a.classList.remove("active"); });
+    if (current) current.a.classList.add("active");
+  }
+  document.addEventListener("scroll", mark, { passive: true });
+  mark();
+})();
+</script>
+</body>
+</html>

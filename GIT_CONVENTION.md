@@ -20,12 +20,9 @@ Start the title with one of these:
 
 `[Spike]`, `[Bug]`, `[Task]`, and `[Feature]` are normal tickets. If you cannot describe the finish line in one sitting, it is an `[Epic]`. Open the epic, then open sub-issues for the pieces and put the same tags on those.
 
-<<<<<<< HEAD
 And just because we combined all into one repo, let's have `[Software]` `[Hardware]` `[Firmware]`
 as well.
 
-=======
->>>>>>> f216dc20808e12823f3ba3047c53c026fd9458b8
 ```
 [Task] Type the worker queues
 ```
@@ -54,7 +51,7 @@ Lead with the issue number, then a short summary of the change.
 [44] Fix api plugging
 ```
 
-One space after the bracket. The number is the GitHub issue this commit belongs to. There should be **MAX 3 COMMITS** per pull request—I actually learn to only have one commit per pr but I feel like it's extreme. Main message is if your pr gets bigger than 3 commits it's probably too big a pr to read for other people. Use discretion for how big to make each commit — I think of each commit as around 3-4 hrs of work.
+One space after the bracket. The number is the GitHub issue this commit belongs to. There should be like max 3 commits per pull request—I actually learn to only have one commit per pr but I feel like it's extreme. Main message is if your pr gets bigger than 3 commits it's probably too big a pr to read for other people. Use discretion for how big to make each commit — I think of each commit as around 3-4 hrs of work.
 
 ## Pull requests
 
