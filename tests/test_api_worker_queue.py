@@ -1,12 +1,13 @@
 import multiprocessing as mp
 import queue
 import time
+from typing import Any
 
-from workers.api_worker import APIWorker
+from workers.api_worker import APIWorker, LLMClient
 
 
-class FakeGeminiClient:
-    async def parse_intent(self, prompt: str):
+class FakeLLMClient:
+    async def parse_intent(self, prompt: str) -> dict[str, Any]:
         return {
             "cmd": "REGISTER_IDENTITY",
             "args": {
@@ -18,33 +19,39 @@ class FakeGeminiClient:
 
     async def analyze_memory(
         self, conversation_history: str, known_facts: str = "None"
-    ):
+    ) -> list[dict[str, str]]:
         return [{"subject": "Alice", "fact": "Likes sushi"}]
 
-    async def close(self):
+    async def close(self) -> None:
         return None
 
 
-class FailingGeminiClient:
-    async def parse_intent(self, prompt: str):
+class FailingLLMClient:
+    async def parse_intent(self, prompt: str) -> dict[str, Any]:
         raise RuntimeError("boom")
 
     async def analyze_memory(
         self, conversation_history: str, known_facts: str = "None"
-    ):
+    ) -> list[dict[str, str]]:
         raise RuntimeError("boom")
 
-    async def close(self):
+    async def close(self) -> None:
         return None
 
 
 class TestableAPIWorker(APIWorker):
-    def __init__(self, input_queue: mp.Queue, output_queue: mp.Queue, client):
-        super().__init__(input_queue, output_queue)
+    def __init__(
+        self,
+        input_queue: mp.Queue,
+        output_queue: mp.Queue,
+        client: LLMClient,
+        log_queue: mp.Queue,
+    ) -> None:
+        super().__init__(input_queue, output_queue, log_queue)
         self.client = client
 
 
-def assert_queue_empty(q: mp.Queue):
+def assert_queue_empty(q: mp.Queue) -> None:
     try:
         q.get_nowait()
         raise AssertionError("Expected queue to be empty")
@@ -52,12 +59,12 @@ def assert_queue_empty(q: mp.Queue):
         pass
 
 
-def test_process_command_happy_paths():
+def test_process_command_happy_paths() -> None:
     input_q = mp.Queue()
     output_q = mp.Queue()
 
-    worker = APIWorker(input_q, output_q)
-    worker.client = FakeGeminiClient()
+    worker = APIWorker(input_q, output_q, mp.Queue())
+    worker.client = FakeLLMClient()
 
     t0 = time.time()
     worker._process_command(
@@ -93,12 +100,12 @@ def test_process_command_happy_paths():
     assert "timestamp" in mem_evt
 
 
-def test_process_command_negative_paths():
+def test_process_command_negative_paths() -> None:
     input_q = mp.Queue()
     output_q = mp.Queue()
 
-    worker = APIWorker(input_q, output_q)
-    worker.client = FakeGeminiClient()
+    worker = APIWorker(input_q, output_q, mp.Queue())
+    worker.client = FakeLLMClient()
 
     worker._process_command({"cmd": "PARSE_INTENT", "text": ""})
     assert_queue_empty(output_q)
@@ -110,11 +117,11 @@ def test_process_command_negative_paths():
     assert_queue_empty(output_q)
 
 
-def test_run_loop_emits_api_error_on_exception():
+def test_run_loop_emits_api_error_on_exception() -> None:
     input_q = mp.Queue()
     output_q = mp.Queue()
 
-    worker = TestableAPIWorker(input_q, output_q, FailingGeminiClient())
+    worker = TestableAPIWorker(input_q, output_q, FailingLLMClient(), mp.Queue())
     worker.start()
 
     input_q.put(
@@ -133,7 +140,7 @@ def test_run_loop_emits_api_error_on_exception():
         worker.join(timeout=1)
 
 
-def run_tests():
+def run_tests() -> None:
     test_process_command_happy_paths()
     test_process_command_negative_paths()
     test_run_loop_emits_api_error_on_exception()

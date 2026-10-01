@@ -6,7 +6,7 @@ from core.config import IDENTITY_DB_PATH
 from database.database import DatabaseManager
 
 
-def run_tests():
+def run_tests() -> None:
     print("--- Starting Database Tests ---")
 
     if os.path.exists(IDENTITY_DB_PATH):

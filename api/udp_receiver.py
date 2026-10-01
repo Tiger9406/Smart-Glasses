@@ -8,7 +8,7 @@ from core.shared_mem import SharedMem
 udp_shutdown_event = threading.Event()
 
 
-def udp_receiver_thread(shared_mem: SharedMem):
+def udp_receiver_thread(shared_mem: SharedMem) -> None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65536)
 

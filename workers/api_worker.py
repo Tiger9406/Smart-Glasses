@@ -2,34 +2,50 @@ import asyncio
 import multiprocessing as mp
 import queue
 import time
+from collections.abc import Coroutine
+from typing import Any, Protocol, TypeVar
 
-# from api.gemini_client import GeminiClient
 from api.openai_client import OpenAIClient
+from core.config import DEFAULT_NAME
 from core.log_interceptor import install_log_interceptor
 from workers.base import IngestionWorker
-from core.config import DEFAULT_NAME
+
+_T = TypeVar("_T")
+
+
+class LLMClient(Protocol):
+    async def parse_intent(self, prompt: str) -> dict[str, Any] | None: ...
+
+    async def analyze_memory(
+        self, conversation_history: str, known_facts: str = "None"
+    ) -> Any: ...
+
+    async def close(self) -> None: ...
 
 
 class APIWorker(IngestionWorker):
-    """Serial Gemini request worker.
-    Input queue: gemini_command_queue
+    """Serial LLM request worker.
+    Input queue: llm_command_queue
     Output queue: results_queue events consumed by Coordinator
     """
 
-    def __init__(self, input_queue: mp.Queue, output_queue: mp.Queue, log_queue: mp.Queue = None):
+    client: LLMClient
+    loop: asyncio.AbstractEventLoop | None
+
+    def __init__(
+        self, input_queue: mp.Queue, output_queue: mp.Queue, log_queue: mp.Queue
+    ) -> None:
         super().__init__(input_queue, output_queue, log_queue=log_queue)
-        # self.client = GeminiClient()
         self.client = OpenAIClient()
         self.loop = None
 
-    def run_async(self, routine):
+    def run_async(self, routine: Coroutine[Any, Any, _T]) -> _T:
         if self.loop is None:
             raise RuntimeError("No apiworker loop")
         return self.loop.run_until_complete(routine)
 
-    def run(self):
-        if self.log_queue is not None:
-            install_log_interceptor(self.log_queue, "[API Worker]")
+    def run(self) -> None:
+        install_log_interceptor(self.log_queue, "[API Worker]")
         print("[API Worker] Started")
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
@@ -66,7 +82,7 @@ class APIWorker(IngestionWorker):
                 asyncio.set_event_loop(None)
             print("[API Worker] Shutting down")
 
-    def _process_command(self, command: dict):
+    def _process_command(self, command: dict[str, Any]) -> None:
         cmd = (command.get("cmd") or "").upper()
 
         if cmd == "PARSE_INTENT":

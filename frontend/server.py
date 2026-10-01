@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import base64
 import json
@@ -7,6 +9,7 @@ import threading
 import time
 from multiprocessing import Queue
 from queue import Empty
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from aiohttp import web
@@ -14,12 +17,15 @@ from aiohttp import web
 from core import config
 from database.database import DatabaseManager  # registers numpy array adapters
 
+if TYPE_CHECKING:
+    import inspireface as isf
+
 # Lazy InspireFace session for face-lookup endpoint
-_isf_session = None
+_isf_session: isf.InspireFaceSession | None = None
 _isf_lock = threading.Lock()
 
 
-def _get_isf_session():
+def _get_isf_session() -> isf.InspireFaceSession | None:
     """Return a shared InspireFace session for face lookup, initializing it once."""
     global _isf_session
     with _isf_lock:
@@ -44,7 +50,7 @@ def _get_isf_session():
             _isf_session = None
     return _isf_session
 
-_connected_ws: set = set()
+_connected_ws: set[web.WebSocketResponse] = set()
 _DB_CHANGE_KEYWORDS = (
     "Created new identity",
     "Saved transcript",
@@ -60,7 +66,7 @@ FRONTEND_DIR = os.path.dirname(os.path.abspath(__file__))
 # DB helpers
 # ---------------------------------------------------------------------------
 
-def _read_db_snapshot(db_path: str) -> dict:
+def _read_db_snapshot(db_path: str) -> dict[str, Any]:
     try:
         conn = sqlite3.connect(db_path, timeout=5)
         conn.execute("PRAGMA journal_mode = WAL;")
@@ -122,7 +128,7 @@ def _read_db_snapshot(db_path: str) -> dict:
 # Broadcast helpers
 # ---------------------------------------------------------------------------
 
-async def _broadcast(msg: dict):
+async def _broadcast(msg: dict[str, Any]) -> None:
     if not _connected_ws:
         return
     text = json.dumps(msg)
@@ -139,7 +145,7 @@ async def _broadcast(msg: dict):
 # Background async tasks
 # ---------------------------------------------------------------------------
 
-async def _log_drain_loop(log_queue: Queue, db_path: str):
+async def _log_drain_loop(log_queue: Queue, db_path: str) -> None:
     while True:
         drained = 0
         while drained < 50:  # batch up to 50 per tick
@@ -158,7 +164,7 @@ async def _log_drain_loop(log_queue: Queue, db_path: str):
         await asyncio.sleep(0.05)
 
 
-async def _db_poll_loop(db_path: str):
+async def _db_poll_loop(db_path: str) -> None:
     while True:
         await asyncio.sleep(5)
         snapshot = _read_db_snapshot(db_path)
@@ -169,16 +175,16 @@ async def _db_poll_loop(db_path: str):
 # HTTP / WebSocket handlers
 # ---------------------------------------------------------------------------
 
-async def _index_handler(request):
+async def _index_handler(request: web.Request) -> web.FileResponse:
     return web.FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
 
-async def _db_api_handler(request):
+async def _db_api_handler(request: web.Request) -> web.Response:
     db_path = request.app["db_path"]
     return web.json_response(_read_db_snapshot(db_path))
 
 
-async def _delete_user_handler(request):
+async def _delete_user_handler(request: web.Request) -> web.Response:
     db_path = request.app["db_path"]
     user_id = request.match_info["user_id"]
     try:
@@ -190,7 +196,7 @@ async def _delete_user_handler(request):
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
-async def _rename_user_handler(request):
+async def _rename_user_handler(request: web.Request) -> web.Response:
     db_path = request.app["db_path"]
     user_id = request.match_info["user_id"]
     try:
@@ -206,7 +212,7 @@ async def _rename_user_handler(request):
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
-async def _user_history_handler(request):
+async def _user_history_handler(request: web.Request) -> web.Response:
     db_path = request.app["db_path"]
     user_id = request.match_info["user_id"]
     try:
@@ -217,7 +223,7 @@ async def _user_history_handler(request):
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
-async def _clear_chat_handler(request):
+async def _clear_chat_handler(request: web.Request) -> web.Response:
     db_path = request.app["db_path"]
     try:
         conn = sqlite3.connect(db_path)
@@ -231,7 +237,7 @@ async def _clear_chat_handler(request):
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
-async def _purge_db_handler(request):
+async def _purge_db_handler(request: web.Request) -> web.Response:
     db_path = request.app["db_path"]
     try:
         DatabaseManager(db_path).clear_db()
@@ -242,7 +248,7 @@ async def _purge_db_handler(request):
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
-def _do_face_lookup(img_bgr, db_path: str) -> dict:
+def _do_face_lookup(img_bgr: np.ndarray, db_path: str) -> dict[str, Any]:
     """Blocking: extract embedding from image, compare against all stored faces."""
     import inspireface as isf
 
@@ -273,7 +279,7 @@ def _do_face_lookup(img_bgr, db_path: str) -> dict:
     best_score = 0.0
     best_name = None
     best_uid = None
-    scores_by_user: dict = {}
+    scores_by_user: dict[str, tuple[float, str]] = {}
 
     for uid, stored_emb, name in rows:
         score = float(isf.feature_comparison(embedding, stored_emb))
@@ -298,7 +304,7 @@ def _do_face_lookup(img_bgr, db_path: str) -> dict:
     }
 
 
-async def _face_lookup_handler(request):
+async def _face_lookup_handler(request: web.Request) -> web.Response:
     db_path = request.app["db_path"]
     loop = asyncio.get_event_loop()
     try:
@@ -327,7 +333,7 @@ async def _face_lookup_handler(request):
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
-async def _ws_handler(request):
+async def _ws_handler(request: web.Request) -> web.WebSocketResponse:
     ws = web.WebSocketResponse(heartbeat=30)
     await ws.prepare(request)
     _connected_ws.add(ws)
@@ -349,7 +355,7 @@ async def _ws_handler(request):
 # Server startup
 # ---------------------------------------------------------------------------
 
-def _run_server_loop(log_queue: Queue, db_path: str, host: str, port: int):
+def _run_server_loop(log_queue: Queue, db_path: str, host: str, port: int) -> None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
@@ -366,7 +372,7 @@ def _run_server_loop(log_queue: Queue, db_path: str, host: str, port: int):
     app.router.add_delete("/api/db", _purge_db_handler)
     app.router.add_post("/api/face_lookup", _face_lookup_handler)
 
-    async def _serve():
+    async def _serve() -> None:
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, host, port)
@@ -380,7 +386,7 @@ def _run_server_loop(log_queue: Queue, db_path: str, host: str, port: int):
     loop.run_until_complete(_serve())
 
 
-def start_monitoring_server(log_queue: Queue, db_path: str):
+def start_monitoring_server(log_queue: Queue, db_path: str) -> None:
     host = config.MONITORING_HOST
     port = config.MONITORING_PORT
     t = threading.Thread(

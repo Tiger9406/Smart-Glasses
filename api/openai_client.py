@@ -1,5 +1,6 @@
 import base64
 import json
+from typing import Any, Literal, overload
 
 import aiohttp
 
@@ -7,7 +8,20 @@ from core import config_openai
 
 
 class OpenAIClient:
-    def __init__(self, timeout_seconds=20):
+    api_key: str
+    url: str
+    max_output_tokens: int
+    temperature: float
+    model: str
+    vision_model: str
+    user_name: str
+    timeout: aiohttp.ClientTimeout
+    _session: aiohttp.ClientSession | None
+    sys_instruct: str
+    tools: list[Any]
+    prompt_config: dict[str, Any]
+
+    def __init__(self, timeout_seconds: float = 20) -> None:
         self.api_key = config_openai.OPENAI_API_KEY
         self.url = config_openai.OPENAI_API_LINK
         self.max_output_tokens = config_openai.MAXOUTPUTTOKENS
@@ -43,7 +57,7 @@ class OpenAIClient:
             )
         return self._session
 
-    async def close(self):
+    async def close(self) -> None:
         if self._session and not self._session.closed:
             await self._session.close()
         print("[OPENAI] Session closed")
@@ -57,7 +71,7 @@ class OpenAIClient:
         if not self.api_key:
             raise ValueError("API Key not configured")
 
-        content = [{"type": "text", "text": prompt}]
+        content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
 
         for jpg_bytes in frames:
             b64_data = base64.b64encode(jpg_bytes).decode("utf-8")
@@ -88,7 +102,7 @@ class OpenAIClient:
 
     async def analyze_memory(
         self, conversation_history: str, known_facts: str = "None"
-    ):
+    ) -> dict[str, Any] | list[Any]:
         if not self.api_key:
             raise ValueError("API Key not configured")
 
@@ -108,7 +122,6 @@ class OpenAIClient:
             ],
             "temperature": self.temperature,
             "max_tokens": self.max_output_tokens,
-            "response_format": {"type": "json_object"},
         }
 
         session = await self._get_session()
@@ -122,7 +135,7 @@ class OpenAIClient:
         ) as response:
             return await self._handle_response(response, "MEMORY_JSON")
 
-    async def parse_intent(self, prompt: str) -> str:
+    async def parse_intent(self, prompt: str) -> dict[str, Any] | None:
 
         if not self.api_key:
             raise ValueError("API Key not configured")
@@ -149,7 +162,24 @@ class OpenAIClient:
         ) as response:
             return await self._handle_response(response, "INTENT")
 
-    async def _handle_response(self, response, response_type: str):
+    @overload
+    async def _handle_response(
+        self, response: aiohttp.ClientResponse, response_type: Literal["VLM"]
+    ) -> str: ...
+
+    @overload
+    async def _handle_response(
+        self, response: aiohttp.ClientResponse, response_type: Literal["MEMORY_JSON"]
+    ) -> dict[str, Any] | list[Any]: ...
+
+    @overload
+    async def _handle_response(
+        self, response: aiohttp.ClientResponse, response_type: Literal["INTENT"]
+    ) -> dict[str, Any] | None: ...
+
+    async def _handle_response(
+        self, response: aiohttp.ClientResponse, response_type: str
+    ) -> str | dict[str, Any] | list[Any] | None:
         if response.status != 200:
             text = await response.text()
             raise RuntimeError(f"API Error {response.status}: {text}")

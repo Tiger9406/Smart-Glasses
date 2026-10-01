@@ -6,6 +6,8 @@ import queue
 import time
 import uuid
 from collections import deque
+from collections.abc import Callable
+from typing import Any, TypedDict
 
 import numpy as np
 
@@ -15,23 +17,49 @@ from database.database import DatabaseManager
 from workers.base import BaseWorker
 
 
+class PendingVoiceRegistration(TypedDict):
+    user_id: str
+    timestamp: float
+
+
 class Coordinator(BaseWorker):
+    events_queue: mp.Queue
+    llm_commands_queue: mp.Queue
+    vision_commands_queue: mp.Queue
+    audio_commands_queue: mp.Queue
+    db: DatabaseManager
+    start_time: float
+    request_number: int
+    CACHE_DURATION: float
+    vision_cache: deque[tuple[float, list[dict[str, Any]]]]
+    AUDIO_CACHE_DURATION: float
+    audio_cache: deque[tuple[float, np.ndarray]]
+    max_delay: float
+    conversation_history: deque[str]
+    pending_voice_registration: PendingVoiceRegistration | None
+    frame_area: int
+    frame_center_x: float
+    frame_center_y: float
+    max_frame_distance: float
+    sample_embeddings: dict[str, np.ndarray]
+    event_handlers: dict[str, Callable[[dict[str, Any]], None]]
+
     def __init__(
         self,
         results_queue: mp.Queue,
-        gemini_commands_queue: mp.Queue,
+        llm_commands_queue: mp.Queue,
         vision_commands_queue: mp.Queue,
         audio_commands_queue: mp.Queue,
-        log_queue: mp.Queue = None,
-    ):
+        log_queue: mp.Queue,
+    ) -> None:
         super().__init__(log_queue=log_queue)
         self.events_queue = results_queue
-        self.llm_commands_queue = gemini_commands_queue
+        self.llm_commands_queue = llm_commands_queue
         self.vision_commands_queue = vision_commands_queue
         self.audio_commands_queue = audio_commands_queue
         self.db = DatabaseManager()
 
-    def setup(self):
+    def setup(self) -> None:
         self.start_time = time.time()
         self.request_number = 0
 
@@ -48,8 +76,8 @@ class Coordinator(BaseWorker):
         self.frame_area = config.RESOLUTION[0] * config.RESOLUTION[1]
         self.frame_center_x = config.RESOLUTION[0] / 2
         self.frame_center_y = config.RESOLUTION[1] / 2
-        self.max_frame_distance = np.sqrt(
-            self.frame_center_x**2 + self.frame_center_y**2
+        self.max_frame_distance = float(
+            np.sqrt(self.frame_center_x**2 + self.frame_center_y**2)
         )
 
         self.sample_embeddings = {}
@@ -67,9 +95,8 @@ class Coordinator(BaseWorker):
             "api_error": self._handle_api_error,
         }
 
-    def run(self):
-        if self.log_queue is not None:
-            install_log_interceptor(self.log_queue, "[Coordinator]")
+    def run(self) -> None:
+        install_log_interceptor(self.log_queue, "[Coordinator]")
         print("[Coordinator] Started")
         self.setup()
 
@@ -85,16 +112,16 @@ class Coordinator(BaseWorker):
         finally:
             print("[Coordinator] Shutting down")
 
-    def _handle_event(self, event):
+    def _handle_event(self, event: dict[str, Any]) -> None:
         event_type = event.get("type", "unknown")
         handler = self.event_handlers.get(event_type, self._handle_unknown_event)
         handler(event)
 
-    def _handle_vision_result(self, event):
+    def _handle_vision_result(self, event: dict[str, Any]) -> None:
         faces = event.get("faces", [])
         self._update_vision_cache(faces)
 
-    def _handle_speech(self, event):
+    def _handle_speech(self, event: dict[str, Any]) -> None:
         user_id = event.get("user_id", config.DEFAULT_ID)
         speaker_name = (
             self.db.get_user_name(user_id)
@@ -165,10 +192,10 @@ class Coordinator(BaseWorker):
         )
         print(f"[Coordinator] {speaker_name}: {event['text']}")
 
-    def _handle_vlm_result(self, event):
+    def _handle_vlm_result(self, event: dict[str, Any]) -> None:
         print(f"[Coordinator] Received VLM output: {event['text']}")
 
-    def _handle_intent(self, event):
+    def _handle_intent(self, event: dict[str, Any]) -> None:
         command = event.get("cmd", "CHAT")
         args = event.get("args", {})
         timestamp = event.get("timestamp", time.time())
@@ -190,13 +217,15 @@ class Coordinator(BaseWorker):
                 }
             )
 
-    def _handle_api_error(self, event):
+    def _handle_api_error(self, event: dict[str, Any]) -> None:
         print(f"Error: {event.get('error')}\nTime: {event.get('timestamp')}")
 
-    def _handle_unknown_event(self, event):
+    def _handle_unknown_event(self, event: dict[str, Any]) -> None:
         print("\n[Coordinator] got other event")
 
-    def _check_pending_voice_registration(self, timestamp, voice_embedding):
+    def _check_pending_voice_registration(
+        self, timestamp: float, voice_embedding: np.ndarray
+    ) -> str | None:
         """
         Handles when trap set to register next unknown speaker
         """
@@ -222,7 +251,12 @@ class Coordinator(BaseWorker):
             return target_id
         return None
 
-    def _register_identity(self, args, timestamp, voice_embedding):
+    def _register_identity(
+        self,
+        args: dict[str, Any],
+        timestamp: float,
+        voice_embedding: np.ndarray | None,
+    ) -> None:
         """
         Handles llm says to register person
         """
@@ -249,13 +283,13 @@ class Coordinator(BaseWorker):
 
     def _handle_existing_identity(
         self,
-        existing_user_ids,
-        name,
-        speaker_name,
-        is_self_intro,
-        timestamp,
-        voice_embedding,
-    ):
+        existing_user_ids: list[str],
+        name: str,
+        speaker_name: str,
+        is_self_intro: bool,
+        timestamp: float,
+        voice_embedding: np.ndarray | None,
+    ) -> None:
         matched_user_id = None
         is_face_already_known = False
         is_voice_already_known = False
@@ -311,8 +345,13 @@ class Coordinator(BaseWorker):
                 }
 
     def _handle_new_identity(
-        self, name, speaker_name, is_self_intro, timestamp, voice_embedding
-    ):
+        self,
+        name: str,
+        speaker_name: str,
+        is_self_intro: bool,
+        timestamp: float,
+        voice_embedding: np.ndarray | None,
+    ) -> None:
         new_user_id = str(uuid.uuid4())
         self.db.create_user(new_user_id, name)
         print(f"[Coordinator] Created new identity: {name} ({new_user_id})")
@@ -336,7 +375,11 @@ class Coordinator(BaseWorker):
         elif speaker_name == config.USER_NAME:
             self._attempt_voice_registration(timestamp, target_user_id)
 
-    def _check_face_match(self, uid, closest_frame):
+    def _check_face_match(
+        self,
+        uid: str,
+        closest_frame: tuple[float, list[dict[str, Any]]] | None,
+    ) -> bool:
         if not closest_frame:
             return False
         _, faces = closest_frame
@@ -345,7 +388,9 @@ class Coordinator(BaseWorker):
                 return True
         return False
 
-    def _check_voice_match(self, uid, is_self_intro, voice_embedding):
+    def _check_voice_match(
+        self, uid: str, is_self_intro: bool, voice_embedding: np.ndarray | None
+    ) -> bool:
         if not (is_self_intro and voice_embedding is not None):
             return False
         stored_voices = self.db.get_voice_embeddings_by_uid(uid)
@@ -355,7 +400,7 @@ class Coordinator(BaseWorker):
             return sim > 0.30
         return False
 
-    def _register_unknown_face(self, timestamp, target_user_id):
+    def _register_unknown_face(self, timestamp: float, target_user_id: str) -> None:
         target_face = self._resolve_unknown_face(timestamp)
         if target_face:
             self.vision_commands_queue.put_nowait(
@@ -367,7 +412,7 @@ class Coordinator(BaseWorker):
                 }
             )
 
-    def _attempt_voice_registration(self, timestamp, target_user_id):
+    def _attempt_voice_registration(self, timestamp: float, target_user_id: str) -> None:
         target_voice = self._resolve_unknown_voice(timestamp)
         if target_voice is not None:
             self.audio_commands_queue.put_nowait(
@@ -383,7 +428,7 @@ class Coordinator(BaseWorker):
                 "timestamp": timestamp,
             }
 
-    def _update_vision_cache(self, faces):
+    def _update_vision_cache(self, faces: list[dict[str, Any]]) -> None:
         """Add and remove old face cache"""
         current_time = time.time()
         self.vision_cache.append((current_time, faces))
@@ -394,7 +439,7 @@ class Coordinator(BaseWorker):
         ):
             self.vision_cache.popleft()
 
-    def _update_audio_cache(self, timestamp, audio):
+    def _update_audio_cache(self, timestamp: float, audio: np.ndarray) -> None:
         current_time = time.time()
         self.audio_cache.append((timestamp, audio))
         while (
@@ -403,7 +448,7 @@ class Coordinator(BaseWorker):
         ):
             self.audio_cache.popleft()
 
-    def _resolve_unknown_voice(self, target_timestamp):
+    def _resolve_unknown_voice(self, target_timestamp: float) -> np.ndarray | None:
         if not self.audio_cache:
             return None
 
@@ -415,7 +460,7 @@ class Coordinator(BaseWorker):
 
         return None
 
-    def _resolve_unknown_face(self, target_timestamp):
+    def _resolve_unknown_face(self, target_timestamp: float) -> dict[str, Any] | None:
         """
         Finds frame closest to target_timestamp and
         Return unknown face best matching wearer's attention
@@ -462,12 +507,14 @@ class Coordinator(BaseWorker):
 
         return best_face
 
-    def _cosine_sim(self, a, b):
-        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+    def _cosine_sim(self, a: np.ndarray, b: np.ndarray) -> float:
+        return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
 
-    def _try_visual_voice_association(self, timestamp, voice_embedding):
+    def _try_visual_voice_association(
+        self, timestamp: float, voice_embedding: np.ndarray
+    ) -> str | None:
         if not self.vision_cache:
-            return False
+            return None
 
         # Define a time window around the speech (e.g., +/- 1.0 second)
         window_size = 1.0
@@ -478,10 +525,10 @@ class Coordinator(BaseWorker):
         ]
 
         if not frames_in_window:
-            return False
+            return None
 
-        speaker_counts = {}
-        presence_counts = {}
+        speaker_counts: dict[str, int] = {}
+        presence_counts: dict[str, int] = {}
         total_frames = len(frames_in_window)
 
         # Tally up presence and speaking flags across all frames in the window
@@ -501,7 +548,7 @@ class Coordinator(BaseWorker):
         # Logic A: Find the person who is actively speaking in the most frames
         # Threshold: Must be flagged as speaking in at least 30% of the frames
         if speaker_counts:
-            most_active_speaker = max(speaker_counts, key=speaker_counts.get)
+            most_active_speaker = max(speaker_counts, key=lambda uid: speaker_counts[uid])
             if (speaker_counts[most_active_speaker] / total_frames) >= 0.3:
                 target_id = most_active_speaker
 

@@ -5,6 +5,7 @@ import queue
 import time
 import uuid
 import wave
+from typing import Any, TypedDict
 
 import mlx.core as mx
 import numpy as np
@@ -17,18 +18,51 @@ from database.database import DatabaseManager
 from workers.base import IngestionWorker
 
 
+def _as_ndarray(value: object) -> np.ndarray:
+    if not isinstance(value, np.ndarray):
+        raise TypeError(f"Expected ndarray from ONNX session, got {type(value).__name__}")
+    return value
+
+
+class SpeakerProfile(TypedDict):
+    embedding: np.ndarray
+    count: int
+
+
 class AudioWorker(IngestionWorker):
+    command_queue: mp.Queue
+    silent_chunks: int
+    chunk_samples: int
+    chunk_bytes: int
+    similarity_threshold: float
+    padding_chunks: int
+    chunk_duration_sec: float
+    audio_writer: wave.Wave_write | None
+    redimnet_session: ort.InferenceSession
+    vad_session: ort.InferenceSession
+    vad_threshold: float
+    vad_sample_rate: np.ndarray
+    vad_window: int
+    vad_context_size: int
+    vad_state: np.ndarray
+    vad_context: np.ndarray
+    vad_buffer: np.ndarray
+    model: Any
+    db: DatabaseManager
+    known_speakers: dict[str, SpeakerProfile]
+    pre_speech_buffer: collections.deque[np.ndarray]
+
     def __init__(
         self,
         input_queue: mp.Queue,
         output_queue: mp.Queue,
         audio_command_queue: mp.Queue,
-        log_queue: mp.Queue = None,
-    ):
+        log_queue: mp.Queue,
+    ) -> None:
         super().__init__(input_queue, output_queue, log_queue=log_queue)
         self.command_queue = audio_command_queue
 
-    def setup(self):
+    def setup(self) -> None:
         chunk_ms = config_audio.AUDIO_CHUNK_SIZE_MS
         sample_rate = config_audio.AUDIO_SAMPLE_RATE_HZ
         self.silent_chunks = config_audio.SILENT_CHUNK_THRESHOLD
@@ -71,7 +105,7 @@ class AudioWorker(IngestionWorker):
 
         print(f"[AudioWorker] Ready. Chunk: {chunk_ms}ms ({self.chunk_bytes} bytes)")
 
-    def reset_vad_states(self):
+    def reset_vad_states(self) -> None:
         """
         Called at end of sentence; wipe previous state
         """
@@ -84,7 +118,7 @@ class AudioWorker(IngestionWorker):
         # buffer to handle input chunk sample not perfectly divisible by 512
         self.vad_buffer = np.array([], dtype=np.float32)
 
-    def speech_checker(self, speech) -> bool:
+    def speech_checker(self, speech: np.ndarray) -> bool:
         # takes new speech chunk into vad_buffer
         self.vad_buffer = np.concatenate((self.vad_buffer, speech))
 
@@ -106,26 +140,26 @@ class AudioWorker(IngestionWorker):
             }
 
             # run inference
-            out, state = self.vad_session.run(None, ort_inputs)
-
-            # update state and context for the NEXT 512-sample chunk
-            self.vad_state = state
+            outputs = self.vad_session.run(None, ort_inputs)
+            out = _as_ndarray(outputs[0])
+            self.vad_state = _as_ndarray(outputs[1])
             self.vad_context = chunk[:, -self.vad_context_size :]  # last 64 bytes
 
             # Check if this specific 32ms micro-chunk contains speech
-            if out[0][0] > self.vad_threshold:
+            if float(out[0][0]) > self.vad_threshold:
                 speech_detected = True
 
         # Returns True if any part of the 300ms window had speech
         return speech_detected
 
-    def get_embedding(self, audio):
-        return self.redimnet_session.run(None, {"audio": audio})[0][0]
+    def get_embedding(self, audio: np.ndarray) -> np.ndarray:
+        first_output = _as_ndarray(self.redimnet_session.run(None, {"audio": audio})[0])
+        return np.asarray(first_output[0])
 
-    def cosine_sim(self, a, b):
-        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+    def cosine_sim(self, a: np.ndarray, b: np.ndarray) -> float:
+        return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
 
-    def identify_speaker(self, embedding, last_user_id) -> str:
+    def identify_speaker(self, embedding: np.ndarray, last_user_id: str) -> str:
         # optional so i can convert it to last speaker if it throws None
         best_uid = config.DEFAULT_ID
         best_score = self.similarity_threshold
@@ -145,9 +179,8 @@ class AudioWorker(IngestionWorker):
 
         return best_uid
 
-    def run(self):
-        if self.log_queue is not None:
-            install_log_interceptor(self.log_queue, "[AudioWorker]")
+    def run(self) -> None:
+        install_log_interceptor(self.log_queue, "[AudioWorker]")
         self.setup()
 
         audio_buffer = b""
@@ -158,6 +191,7 @@ class AudioWorker(IngestionWorker):
         session_id = None
         transcriber = None
         ctx = None
+        speech_start_time: float | None = None
         silence_count = 0  # track consecutive silent chunks
 
         self.pre_speech_buffer = collections.deque(maxlen=self.padding_chunks)
@@ -241,7 +275,7 @@ class AudioWorker(IngestionWorker):
                                 speaker = self.identify_speaker(embedding, last_speaker)
                                 last_speaker = speaker
 
-                                if final_text:
+                                if final_text and speech_start_time is not None:
                                     self.output_queue.put(
                                         {
                                             "type": "speech",
@@ -255,10 +289,12 @@ class AudioWorker(IngestionWorker):
                                         }
                                     )
                                 # close session
-                                ctx.__exit__(None, None, None)
+                                if ctx is not None:
+                                    ctx.__exit__(None, None, None)
                                 transcriber = None
                                 ctx = None
                                 session_id = None
+                                speech_start_time = None
                                 silence_count = 0
                                 audio_chunk_holder = []
 
@@ -267,11 +303,11 @@ class AudioWorker(IngestionWorker):
         finally:
             if ctx:
                 ctx.__exit__(None, None, None)
-            if hasattr(self, "audio_writer") and self.audio_writer:
+            if self.audio_writer is not None:
                 self.audio_writer.close()
                 print("[AudioWorker] AudioWriter released")
 
-    def register_identity(self, user_id, embedding):
+    def register_identity(self, user_id: str, embedding: np.ndarray) -> None:
         curr_data = self.known_speakers.get(user_id, None)
         self.db.save_voice_embedding(user_id, embedding)
         if curr_data is None:
@@ -287,7 +323,7 @@ class AudioWorker(IngestionWorker):
                 "count": curr_count + 1,
             }
 
-    def _handle_commands(self):
+    def _handle_commands(self) -> None:
         while not self.command_queue.empty():
             try:
                 command = self.command_queue.get_nowait()
@@ -303,7 +339,7 @@ class AudioWorker(IngestionWorker):
             except Exception as e:
                 print(f"[Audio] Command error: {e}")
 
-    def _debug_audio(self, session_id, sentence_audio):
+    def _debug_audio(self, session_id: str | None, sentence_audio: np.ndarray) -> None:
         os.makedirs("api/simulator_resources/debug_audios", exist_ok=True)
         debug_filename = (
             f"api/simulator_resources/debug_audios/debug_{int(time.time())}.wav"
@@ -320,7 +356,7 @@ class AudioWorker(IngestionWorker):
 
         print("[Debug] Saved audio chunk")
 
-    def _init_audio_writer(self):
+    def _init_audio_writer(self) -> None:
 
         output_path = config.AUDIO_OUTPUT_PATH
         output_dir = os.path.dirname(output_path)

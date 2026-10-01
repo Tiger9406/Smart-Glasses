@@ -5,11 +5,11 @@ import queue
 import threading
 import time
 from collections import deque
+from typing import TypedDict
 
 import cv2
 import numpy as np
 
-# from api.gemini_client import GeminiClient
 from api.openai_client import OpenAIClient
 from core import config, config_vision
 from core.log_interceptor import install_log_interceptor
@@ -17,18 +17,49 @@ from workers.base import IngestionWorker
 from workers.vision_utils.inspireface_processor import InspireFaceProcessor
 
 
+class FaceTrack(TypedDict):
+    track_id: int
+    bbox: tuple[int, int, int, int]
+    user_id: str
+    name: str
+    score: float
+    emb: np.ndarray | None
+
+
+class ActiveIdentity(TypedDict):
+    user_id: str
+    name: str
+    score: float
+    checked_ts: float
+    last_seen: float
+
+
 class VisionWorker(IngestionWorker):
+    command_queue: mp.Queue
+    processor: InspireFaceProcessor
+    video_writer: cv2.VideoWriter | None
+    active_identities: dict[int, ActiveIdentity]
+    RECHECK_INTERVAL: float
+    CONFIDENCE_THRESHOLD: float
+    LOST_TRACK_THRESHOLD: float
+    buffer_len: int
+    frame_buffer: deque[tuple[float, bytes]]
+    vlm_client: OpenAIClient
+    loop: asyncio.AbstractEventLoop
+    async_thread: threading.Thread
+    frame_archive: list[tuple[float, bytes, list[FaceTrack]]]
+
     def __init__(
         self,
         input_queue: mp.Queue,
         output_queue: mp.Queue,
         vision_command_queue: mp.Queue,
-        log_queue: mp.Queue = None,
-    ):
+        log_queue: mp.Queue,
+    ) -> None:
         super().__init__(input_queue, output_queue, log_queue=log_queue)
         self.command_queue = vision_command_queue
 
-    def setup(self):
+    def setup(self) -> None:
         print("[Vision] Worker setting up")
         self.processor = InspireFaceProcessor()
         self.processor.session.set_track_lost_recovery_mode(True)
@@ -40,7 +71,6 @@ class VisionWorker(IngestionWorker):
 
         self.buffer_len = int(config_vision.FPS * config_vision.BUFFER_DURATION)
         self.frame_buffer = deque(maxlen=self.buffer_len)
-        # self.vlm_client = GeminiClient()  # its own gemini client
         self.vlm_client = OpenAIClient()
 
         # async thread for continual loop for vlm
@@ -54,7 +84,7 @@ class VisionWorker(IngestionWorker):
 
         print("[Vision] Ready")
 
-    def _start_background_loop(self):
+    def _start_background_loop(self) -> None:
         """
         spins a separate thread, keeps an event loop open
         so we can reuse the VLMClient session across multiple requests.
@@ -62,9 +92,8 @@ class VisionWorker(IngestionWorker):
         asyncio.set_event_loop(self.loop)
         self.loop.run_forever()  # blocking; awaits something thrown at self.loop
 
-    def run(self):
-        if self.log_queue is not None:
-            install_log_interceptor(self.log_queue, "[Vision]")
+    def run(self) -> None:
+        install_log_interceptor(self.log_queue, "[Vision]")
         # for now some basic logic about facial recognition; avoids re-recognizing too often
         self.setup()
 
@@ -93,13 +122,12 @@ class VisionWorker(IngestionWorker):
 
         finally:
             print("[Vision] Releasing resources")
-            if hasattr(self, "processor") and self.processor.session:
-                self.processor.session.release()
+            self.processor.session.release()
             if config.SAVE_ANNOTATED_VID and self.frame_archive:
                 self._render_video_offline()
                 print("[Vision] VideoWriter released")
 
-            if self.loop and self.loop.is_running():
+            if self.loop.is_running():
                 # schedule to close coroutine
                 future = asyncio.run_coroutine_threadsafe(
                     self.vlm_client.close(), self.loop
@@ -111,10 +139,9 @@ class VisionWorker(IngestionWorker):
 
                 self.loop.call_soon_threadsafe(self.loop.stop)
 
-            if self.async_thread:
-                self.async_thread.join(timeout=1)
+            self.async_thread.join(timeout=1)
 
-    def _facial_loop(self, frame):
+    def _facial_loop(self, frame: np.ndarray) -> list[FaceTrack]:
         raw_detection_faces = self.processor.detect_faces(frame)
         result = []
 
@@ -132,7 +159,7 @@ class VisionWorker(IngestionWorker):
                     "user_id": config.DEFAULT_ID,
                     "name": config.DEFAULT_NAME,
                     "score": 0.0,
-                    "checked_ts": 0,
+                    "checked_ts": 0.0,
                     "last_seen": now,
                 }
             else:
@@ -206,7 +233,7 @@ class VisionWorker(IngestionWorker):
         
         return result
     
-    def _render_video_offline(self):
+    def _render_video_offline(self) -> None:
         """Processes the stored frames and metadata into an mp4 after runtime."""
         print(f"[Vision] Rendering {len(self.frame_archive)} frames to disk. This may take a moment...")
         
@@ -215,28 +242,34 @@ class VisionWorker(IngestionWorker):
 
         first_time, first_raw, _ = self.frame_archive[0]
         first_frame = cv2.imdecode(np.frombuffer(first_raw, np.uint8), cv2.IMREAD_COLOR)
+        if first_frame is None:
+            return
         self._init_video_writer(first_frame)
+        writer = self.video_writer
+        if writer is None:
+            return
 
         frame_duration = 1.0 / config_vision.FPS
         expected_time = first_time
 
         for timestamp, raw_bytes, faces_data in self.frame_archive:
             frame = cv2.imdecode(np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR)
-            
+            if frame is None:
+                continue
+
             for face in faces_data:
                 label_text = f"{face['name']} (ID: {face['track_id']})"
                 self._draw_face_label(frame, face['bbox'], label_text)
             
             # Write the frame at least once, and duplicate if we missed the previous expected slot(s)
             while expected_time <= timestamp:
-                self.video_writer.write(frame)
+                writer.write(frame)
                 expected_time += frame_duration
 
-        if self.video_writer:
-            self.video_writer.release()
-            print("[Vision] Offline video rendering complete.")
+        writer.release()
+        print("[Vision] Offline video rendering complete.")
 
-    def _handle_commands(self):
+    def _handle_commands(self) -> None:
         while not self.command_queue.empty():
             try:
                 command = self.command_queue.get_nowait()
@@ -286,8 +319,8 @@ class VisionWorker(IngestionWorker):
                 print(f"[Vision] Command error: {e}")
 
     async def _handle_vlm(
-        self, frames, prompt: str, request_id: int
-    ):  # handling api request
+        self, frames: list[bytes], prompt: str, request_id: int
+    ) -> None:  # handling api request
         try:
             response_text = await self.vlm_client.analyze_video_frames(frames, prompt)
 
@@ -304,21 +337,23 @@ class VisionWorker(IngestionWorker):
 
     def _init_video_writer(
         self,
-        frame,
-        output_path=config.VIDEO_OUTPUT_PATH,
-        fps=config_vision.FPS,
-    ):
+        frame: np.ndarray,
+        output_path: str = config.VIDEO_OUTPUT_PATH,
+        fps: float = config_vision.FPS,
+    ) -> None:
         """initialize VideoWriter based on the first frame's dimensions"""
         output_dir = os.path.dirname(output_path)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
 
         h, w = frame.shape[:2]
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        fourcc = cv2.VideoWriter.fourcc(*"mp4v")
         self.video_writer = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
         print(f"[Vision] VideoWriter initialized: {output_path} ({w}x{h} @ {fps}fps)")
 
-    def _draw_face_label(self, frame, bbox, text):
+    def _draw_face_label(
+        self, frame: np.ndarray, bbox: tuple[int, int, int, int], text: str
+    ) -> None:
         x1, y1, x2, y2 = bbox
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
         (text_w, text_h), baseline = cv2.getTextSize(

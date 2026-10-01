@@ -16,7 +16,7 @@ CONFIDENCE_THRESHOLD_MATCHING = 0.5
 BUFFER_DURATION = 5
 VLM_ACTIVE = False
 
-def get_model_path(model_type):
+def get_model_path(model_type: str) -> str:
     if model_type == "Megatron":
         return MEGATRON_MODEL_PATH
     return PIKACHU_MODEL_PATH

@@ -21,7 +21,7 @@ We leverage python's multiprocessing to prevent ML inference from blocking async
 - **Concurrency:** `multiprocessing`, `asyncio`
 - **Vision** `OpenCV`, `InspireFace`
 - **Audio:** MLX `Parakeet` via `ONNX`
-- **Context:** `GEMINI` API
+- **Context:** `OpenAI` API
 - **Database:** `SQLite` (FAISS & vector db to be explored)
 
 ## Setup
@@ -83,7 +83,7 @@ pip install -r requirements.txt
 ### 5. Make .env
 
 Copy .env.example and rename it to .env
-Enter your gemini API key for LLM functions
+Enter your OpenAI API key for LLM functions
 
 ### 6. Run!!
 

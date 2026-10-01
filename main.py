@@ -20,7 +20,7 @@ from workers.coordinator import Coordinator
 from workers.vision import VisionWorker
 
 
-def main():
+def main() -> None:
     shared_mem = SharedMem()
     install_log_interceptor(shared_mem.log_queue, "[System]")
     start_monitoring_server(shared_mem.log_queue, config.IDENTITY_DB_PATH)
@@ -43,7 +43,7 @@ def main():
 
     brain = Coordinator(
         shared_mem.results_queue,
-        shared_mem.gemini_command_queue,
+        shared_mem.llm_command_queue,
         shared_mem.vision_command_queue,
         shared_mem.audio_command_queue,
         log_queue=shared_mem.log_queue,
@@ -59,7 +59,7 @@ def main():
         log_queue=shared_mem.log_queue,
     )
 
-    api_worker = APIWorker(shared_mem.gemini_command_queue, shared_mem.results_queue,
+    api_worker = APIWorker(shared_mem.llm_command_queue, shared_mem.results_queue,
                            log_queue=shared_mem.log_queue)
 
     print("[System] Starting background workers")

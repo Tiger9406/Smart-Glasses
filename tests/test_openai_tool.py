@@ -5,7 +5,7 @@ import cv2
 from api.openai_client import OpenAIClient
 
 
-async def main():
+async def main() -> None:
     print("Initializing OpenAIClient...")
     client = OpenAIClient()
 
@@ -15,11 +15,11 @@ async def main():
         facts = "User is building a high-performance system."
         memory_result = await client.analyze_memory(history, facts)
 
-        # Assert memory returns a dictionary (JSON object) and is not empty
-        assert isinstance(memory_result, dict), (
-            f"Expected dict, got {type(memory_result)}"
+        # Prompt asks for a JSON list of {subject, fact}
+        assert isinstance(memory_result, list), (
+            f"Expected list, got {type(memory_result)}"
         )
-        assert len(memory_result) > 0, "Memory result dictionary is empty"
+        assert len(memory_result) > 0, "Memory result list is empty"
         print("Memory Result verified.")
 
         print("\n--- Testing analyze_video_frames ---")
@@ -44,6 +44,7 @@ async def main():
             "Speaker: Sarah: Hi Tiger, I don't think we've met. My name is Sarah."
         )
         result_self_intro = await client.parse_intent(prompt_self_intro)
+        assert result_self_intro is not None
         assert result_self_intro["cmd"] == "REGISTER_IDENTITY", (
             f"Wrong command: {result_self_intro.get('cmd')}"
         )
@@ -68,8 +69,9 @@ async def main():
 
         prompt_hello = "Speaker: Tiger: Hey Sean."
         result_third_party = await client.parse_intent(prompt_hello)
+        assert result_third_party is not None
         assert result_third_party["cmd"] == "REGISTER_IDENTITY", (
-            f"Wrong command: {result_self_intro.get('cmd')}"
+            f"Wrong command: {result_third_party.get('cmd')}"
         )
         assert result_third_party["args"]["name"] == "Sean", (
             "Failed to extract name 'Sean'"
@@ -90,7 +92,7 @@ async def main():
         await client.close()
 
 
-def get_video_clip():
+def get_video_clip() -> list[bytes] | None:
     video_path = "api/simulator_resources/LongVideo.mp4"
 
     # 1. Open the video

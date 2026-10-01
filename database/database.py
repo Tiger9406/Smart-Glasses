@@ -7,7 +7,7 @@ import numpy as np
 from core.config import IDENTITY_DB_PATH
 
 
-def adapt_array(arr: np.ndarray):
+def adapt_array(arr: np.ndarray) -> sqlite3.Binary:
     """convert numpy arr to binary data for sqlite"""
     out = io.BytesIO()
     np.save(out, arr)
@@ -15,7 +15,7 @@ def adapt_array(arr: np.ndarray):
     return sqlite3.Binary(out.read())
 
 
-def convert_array(binary_data: bytes):
+def convert_array(binary_data: bytes) -> np.ndarray:
     out = io.BytesIO(binary_data)
     out.seek(0)
     return np.load(out)
@@ -26,17 +26,17 @@ sqlite3.register_converter("ARRAY", convert_array)
 
 
 class DatabaseManager:
-    def __init__(self, db_path=IDENTITY_DB_PATH):
+    def __init__(self, db_path: str = IDENTITY_DB_PATH) -> None:
         self.db_path = db_path
         self._init_db()
 
-    def _get_connection(self):
+    def _get_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES)
         conn.execute("PRAGMA foreign_keys = ON;")
         conn.execute("PRAGMA journal_mode = WAL;")
         return conn
 
-    def _init_db(self):
+    def _init_db(self) -> None:
         """Create schema & table if doesn't exist"""
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         with self._get_connection() as conn:
@@ -93,14 +93,14 @@ class DatabaseManager:
 
             conn.commit()
 
-    def delete_user(self, user_id: str):
+    def delete_user(self, user_id: str) -> None:
         """deleting user"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
             conn.commit()
 
-    def create_user(self, user_id: str, name: str):
+    def create_user(self, user_id: str, name: str) -> None:
         """create user"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -113,7 +113,7 @@ class DatabaseManager:
             )
             conn.commit()
 
-    def update_user(self, user_id: str, new_name: str):
+    def update_user(self, user_id: str, new_name: str) -> None:
         """update user name"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -130,14 +130,14 @@ class DatabaseManager:
             row = cursor.fetchone()
             return row[0] if row else "Unknown"
 
-    def get_all_users(self) -> dict:
+    def get_all_users(self) -> dict[str, str]:
         """Returns a dictionary mapping user_id -> name"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT id, name FROM users")
             return dict(cursor.fetchall())
 
-    def save_face_embedding(self, user_id: str, embedding: np.ndarray):
+    def save_face_embedding(self, user_id: str, embedding: np.ndarray) -> None:
         """Save new face embedding linked to UUID"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -147,7 +147,7 @@ class DatabaseManager:
             )
             conn.commit()
 
-    def save_voice_embedding(self, user_id: str, embedding: np.ndarray):
+    def save_voice_embedding(self, user_id: str, embedding: np.ndarray) -> None:
         """Save new voice embedding linked to UUID"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -157,7 +157,7 @@ class DatabaseManager:
             )
             conn.commit()
 
-    def get_all_faces(self) -> dict:
+    def get_all_faces(self) -> dict[str, list[np.ndarray]]:
         """return dict mapping: user_id to faces"""
         faces_dict = {}
         with self._get_connection() as conn:
@@ -169,7 +169,7 @@ class DatabaseManager:
                 faces_dict[uid].append(emb)
         return faces_dict
 
-    def get_all_voices(self) -> dict:
+    def get_all_voices(self) -> dict[str, list[np.ndarray]]:
         """dict of voice embeddings mapped by user_id"""
         voices_dict = {}
         with self._get_connection() as conn:
@@ -181,7 +181,7 @@ class DatabaseManager:
                 voices_dict[uid].append(emb)
         return voices_dict
 
-    def save_chat_history(self, user_id: str, transcript: str):
+    def save_chat_history(self, user_id: str, transcript: str) -> None:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -190,7 +190,7 @@ class DatabaseManager:
             )
             conn.commit()
 
-    def get_chat_history(self, user_id: str, limit: int = 10) -> list:
+    def get_chat_history(self, user_id: str, limit: int = 10) -> list[tuple[str, str]]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -205,7 +205,7 @@ class DatabaseManager:
             )
             return cursor.fetchall()
     
-    def get_recent_chat_history(self, limit: int = 50) -> list:
+    def get_recent_chat_history(self, limit: int = 50) -> list[dict[str, str | int]]:
         """Returns most recent chat entries across all users, ordered oldest-first for display."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -225,21 +225,21 @@ class DatabaseManager:
             for r in reversed(rows)
         ]
 
-    def get_user_ids_by_name(self, name: str):
+    def get_user_ids_by_name(self, name: str) -> list[str]:
         """Returns the UUID for a given name, or None if not found."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT id FROM users WHERE name = ?", (name,))
             return [row[0] for row in cursor.fetchall()]
         
-    def get_voice_embeddings_by_uid(self, user_id: str):
+    def get_voice_embeddings_by_uid(self, user_id: str) -> list[np.ndarray]:
         """returns a list of voice embeddings for a given UUID"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT embedding FROM voice_embeddings WHERE user_id = ?", (user_id,))
             return [emb for (emb,) in cursor.fetchall()]
 
-    def clear_db(self):
+    def clear_db(self) -> None:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM users")

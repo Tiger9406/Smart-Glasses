@@ -2,9 +2,10 @@ import builtins
 import functools
 import time
 import multiprocessing as mp
+from typing import Any
 
 
-def install_log_interceptor(log_queue: mp.Queue, source_tag: str):
+def install_log_interceptor(log_queue: mp.Queue, source_tag: str) -> None:
     """
     Monkey-patches builtins.print in the calling process to also put
     structured log dicts onto log_queue. Original print is preserved
@@ -15,7 +16,7 @@ def install_log_interceptor(log_queue: mp.Queue, source_tag: str):
     original_print = builtins.print
 
     @functools.wraps(original_print)
-    def _intercepted_print(*args, **kwargs):
+    def _intercepted_print(*args: Any, **kwargs: Any) -> None:
         original_print(*args, **kwargs)
         text = " ".join(str(a) for a in args)
         try:
