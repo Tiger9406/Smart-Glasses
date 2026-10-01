@@ -4,6 +4,7 @@ from inspireface import FaceInformation
 
 from core import config, config_vision
 from database.database import DatabaseManager
+from workers.vision_utils.matching import best_identity
 
 
 class InspireFaceProcessor:
@@ -102,15 +103,9 @@ class InspireFaceProcessor:
         embedding: np.ndarray,
         threshold: float = config_vision.CONFIDENCE_THRESHOLD_MATCHING,
     ) -> tuple[str, float]:
-        # given embedding, compare to known faces and return best match name and according score
-        best_score = 0.0
-        best_match = config.DEFAULT_ID
-
-        if self.known_faces:
-            for user_id, _ in self.known_faces.items():
-                score = self.compare_to_person(user_id, embedding)
-                if score > threshold and score > best_score:
-                    best_score = score
-                    best_match = user_id
-
-        return best_match, best_score
+        return best_identity(
+            list(self.known_faces),
+            lambda user_id: self.compare_to_person(user_id, embedding),
+            threshold,
+            config.DEFAULT_ID,
+        )

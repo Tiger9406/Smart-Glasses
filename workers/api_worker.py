@@ -8,6 +8,7 @@ from typing import Any, Protocol, TypeVar
 from api.openai_client import OpenAIClient
 from core.config import DEFAULT_NAME
 from core.log_interceptor import install_log_interceptor
+from workers.api_utils.commands import command_name, intent_event, memory_event
 from workers.base import IngestionWorker
 
 _T = TypeVar("_T")
@@ -53,6 +54,7 @@ class APIWorker(IngestionWorker):
         try:
             while self.running.is_set():
                 try:
+                    # one llm call at a time, in the order they were queued
                     command = self.input_queue.get(timeout=0.1)
                     self._process_command(command)
                 except queue.Empty:
@@ -83,53 +85,30 @@ class APIWorker(IngestionWorker):
             print("[API Worker] Shutting down")
 
     def _process_command(self, command: dict[str, Any]) -> None:
-        cmd = (command.get("cmd") or "").upper()
+        cmd = command_name(command)
+        now = time.time()
 
+        # turn the latest transcript into an intent the coordinator can act on
         if cmd == "PARSE_INTENT":
-            prompt = command.get("text", "")
-            if not prompt:
+            if not command.get("text"):
                 return
-
-            result = self.run_async(self.client.parse_intent(prompt))
-            if result is None:
-                return
-
-            self.output_queue.put_nowait(
-                {
-                    "type": "intent",
-                    "cmd": result.get("cmd", "CHAT"),
-                    "args": result.get("args", {}),
-                    "timestamp": command.get("timestamp", time.time()),
-                    "voice_embedding": command.get("voice_embedding"),
-                }
-            )
+            result = self.run_async(self.client.parse_intent(command.get("text", "")))
+            event = intent_event(command, result, now)
+            if event is not None:
+                self.output_queue.put_nowait(event)
             return
 
-        # not being used by coordinator yet tho
-
+        # pull facts out of the conversation
         if cmd == "ANALYZE_MEMORY":
             conversation_history = command.get("conversation_history", "")
-            known_facts = command.get("known_facts", "None")
-            subject = command.get("subject", DEFAULT_NAME)
-
             if not conversation_history:
                 return
-
             result = self.run_async(
                 self.client.analyze_memory(
                     conversation_history=conversation_history,
-                    known_facts=known_facts,
+                    known_facts=command.get("known_facts", "None"),
                 )
             )
-
-            self.output_queue.put_nowait(
-                {
-                    "type": "memory_result",
-                    "subject": subject,
-                    "facts": result,
-                    "timestamp": time.time(),
-                }
-            )
-            return
-
-        # Unknown command types are ignored to keep worker resilient.
+            event = memory_event(command, result, now, DEFAULT_NAME)
+            if event is not None:
+                self.output_queue.put_nowait(event)

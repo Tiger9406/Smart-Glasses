@@ -1,18 +1,18 @@
 import os
+import tempfile
 
 import numpy as np
 
-from core.config import IDENTITY_DB_PATH
 from database.database import DatabaseManager
 
 
 def run_tests() -> None:
     print("--- Starting Database Tests ---")
 
-    if os.path.exists(IDENTITY_DB_PATH):
-        os.remove(IDENTITY_DB_PATH)
-
-    db = DatabaseManager(db_path=IDENTITY_DB_PATH)
+    db_dir = tempfile.mkdtemp()
+    db_path = os.path.join(db_dir, "identities.db")
+    db = DatabaseManager(db_path=db_path)
+    db.create_user("Alice", "Alice")
     print("Database initialized successfully")
 
     user_name = "Alice"
@@ -56,11 +56,11 @@ def run_tests() -> None:
 
     print("Chat history saved and retrieved in correct order (newest first).")
 
-    # 6. Cleanup
-    if os.path.exists(IDENTITY_DB_PATH):
-        os.remove(IDENTITY_DB_PATH)
-        os.remove(IDENTITY_DB_PATH + "-shm")
-        os.remove(IDENTITY_DB_PATH + "-wal")
+    for suffix in ("", "-shm", "-wal"):
+        path = db_path + suffix
+        if os.path.exists(path):
+            os.remove(path)
+    os.rmdir(db_dir)
     print("Test database cleaned up")
     print("--- 🎉 All Tests Passed! 🎉 ---")
 

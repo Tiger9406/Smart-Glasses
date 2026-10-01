@@ -1,3 +1,4 @@
+import asyncio
 import multiprocessing as mp
 import queue
 import time
@@ -51,6 +52,15 @@ class TestableAPIWorker(APIWorker):
         self.client = client
 
 
+def attach_loop(worker: APIWorker) -> None:
+    worker.loop = asyncio.new_event_loop()
+
+
+def close_loop(worker: APIWorker) -> None:
+    if worker.loop is not None and not worker.loop.is_closed():
+        worker.loop.close()
+
+
 def assert_queue_empty(q: mp.Queue) -> None:
     try:
         q.get_nowait()
@@ -65,39 +75,43 @@ def test_process_command_happy_paths() -> None:
 
     worker = APIWorker(input_q, output_q, mp.Queue())
     worker.client = FakeLLMClient()
+    attach_loop(worker)
 
     t0 = time.time()
-    worker._process_command(
-        {
-            "cmd": "PARSE_INTENT",
-            "text": "Hi, I am John",
-            "timestamp": t0,
-            "voice_embedding": [0.1, 0.2],
-        }
-    )
+    try:
+        worker._process_command(
+            {
+                "cmd": "PARSE_INTENT",
+                "text": "Hi, I am John",
+                "timestamp": t0,
+                "voice_embedding": [0.1, 0.2],
+            }
+        )
 
-    evt = output_q.get(timeout=1)
-    assert evt["type"] == "intent"
-    assert evt["cmd"] == "REGISTER_IDENTITY"
-    assert evt["args"]["name"] == "John"
-    assert evt["timestamp"] == t0
-    assert evt["voice_embedding"] == [0.1, 0.2]
+        evt = output_q.get(timeout=1)
+        assert evt["type"] == "intent"
+        assert evt["cmd"] == "REGISTER_IDENTITY"
+        assert evt["args"]["name"] == "John"
+        assert evt["timestamp"] == t0
+        assert evt["voice_embedding"] == [0.1, 0.2]
 
-    worker._process_command(
-        {
-            "cmd": "ANALYZE_MEMORY",
-            "conversation_history": "Alice said she likes sushi",
-            "known_facts": "None",
-            "subject": "Alice",
-        }
-    )
+        worker._process_command(
+            {
+                "cmd": "ANALYZE_MEMORY",
+                "conversation_history": "Alice said she likes sushi",
+                "known_facts": "None",
+                "subject": "Alice",
+            }
+        )
 
-    mem_evt = output_q.get(timeout=1)
-    assert mem_evt["type"] == "memory_result"
-    assert mem_evt["subject"] == "Alice"
-    assert isinstance(mem_evt["facts"], list)
-    assert mem_evt["facts"][0]["subject"] == "Alice"
-    assert "timestamp" in mem_evt
+        mem_evt = output_q.get(timeout=1)
+        assert mem_evt["type"] == "memory_result"
+        assert mem_evt["subject"] == "Alice"
+        assert isinstance(mem_evt["facts"], list)
+        assert mem_evt["facts"][0]["subject"] == "Alice"
+        assert "timestamp" in mem_evt
+    finally:
+        close_loop(worker)
 
 
 def test_process_command_negative_paths() -> None:
@@ -106,15 +120,19 @@ def test_process_command_negative_paths() -> None:
 
     worker = APIWorker(input_q, output_q, mp.Queue())
     worker.client = FakeLLMClient()
+    attach_loop(worker)
 
-    worker._process_command({"cmd": "PARSE_INTENT", "text": ""})
-    assert_queue_empty(output_q)
+    try:
+        worker._process_command({"cmd": "PARSE_INTENT", "text": ""})
+        assert_queue_empty(output_q)
 
-    worker._process_command({"cmd": "ANALYZE_MEMORY", "conversation_history": ""})
-    assert_queue_empty(output_q)
+        worker._process_command({"cmd": "ANALYZE_MEMORY", "conversation_history": ""})
+        assert_queue_empty(output_q)
 
-    worker._process_command({"cmd": "UNKNOWN_COMMAND"})
-    assert_queue_empty(output_q)
+        worker._process_command({"cmd": "UNKNOWN_COMMAND"})
+        assert_queue_empty(output_q)
+    finally:
+        close_loop(worker)
 
 
 def test_run_loop_emits_api_error_on_exception() -> None:
