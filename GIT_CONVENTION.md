@@ -51,11 +51,13 @@ Lead with the issue number, then a short summary of the change.
 [44] Fix api plugging
 ```
 
-One space after the bracket. The number is the GitHub issue this commit belongs to. There should be like max 3 commits per pull request—I actually learn to only have one commit per pr but I feel like it's extreme. Main message is if your pr gets bigger than 3 commits it's probably too big a pr to read for other people. Use discretion for how big to make each commit — I think of each commit as around 3-4 hrs of work.
+One space after the bracket. The number is the GitHub issue this commit belongs to. Each commit should be logically quarantined. I think of each as 3-4 hours of work.
 
 ## Pull requests
 
 Title matches the commit: issue number, then the same kind of summary.
+
+I'm making each pr one commit; you can commit multiple times while writing code but when you merge you always have to squash the commits (squish them all into one commit). Don't worry you can see how it works when you go to the pr page and opt to merge in your changes.
 
 ```
 [44] Fix api plugging
