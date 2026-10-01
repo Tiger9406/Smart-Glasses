@@ -1,0 +1,61 @@
+#include "websocket.h"
+#include "config.h"
+#include <WiFi.h>
+#include "esp_websocket_client.h"
+
+static esp_websocket_client_handle_t ws_client;
+
+// Sets up connection to the local network
+void setupNetwork(const char* ssid, const char* password, const char* server_uri) {
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+    Serial.print("Connecting to WiFi");
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println("\nConnected to WiFi");
+
+    esp_websocket_client_config_t ws_cfg = {};
+    ws_cfg.uri = server_uri;
+    ws_client = esp_websocket_client_init(&ws_cfg);
+    esp_websocket_client_start(ws_client);
+}
+
+//function to send buffers over network
+void websocket_send_task(void *pvParameters) {
+    video_frame_t video_frame;
+    audio_buffer_t audio_buf;
+    uint8_t *send_buf = NULL;
+
+    while(1) {
+        bool connected = esp_websocket_client_is_connected(ws_client);
+
+        if (xQueueReceive(audio_tx_queue, &audio_buf, pdMS_TO_TICKS(5)) == pdTRUE) {
+            if (connected) {
+                size_t audio_size = audio_buf.count * sizeof(int16_t);
+                send_buf = (uint8_t*)malloc(1 + audio_size);
+                if (send_buf) {
+                    send_buf[0] = WS_FRAME_AUDIO_TX;
+                    memcpy(&send_buf[1], audio_buf.samples, audio_size);
+                    esp_websocket_client_send_bin(ws_client, (const char*)send_buf, 1 + audio_size, portMAX_DELAY);
+                    free(send_buf);
+                }
+            }
+        }
+
+        if (xQueueReceive(video_queue, &video_frame, 0) == pdTRUE) {
+            if (connected) {
+                send_buf = (uint8_t*)malloc(1 + video_frame.len);
+                if (send_buf) {
+                    send_buf[0] = WS_FRAME_VIDEO;
+                    memcpy(&send_buf[1], video_frame.data, video_frame.len);
+                    esp_websocket_client_send_bin(ws_client, (const char*)send_buf, 1 + video_frame.len, portMAX_DELAY);
+                    free(send_buf);
+                }
+            }
+            free(video_frame.data); 
+        }
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+}
