@@ -1,0 +1,4 @@
+# LTspice outputs
+*.raw
+*.log
+*.net
