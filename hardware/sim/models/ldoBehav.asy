@@ -1,0 +1,18 @@
+Version 4
+SymbolType BLOCK
+RECTANGLE Normal -48 -40 64 40
+WINDOW 0 8 -40 Bottom 2
+WINDOW 3 8 40 Top 2
+WINDOW 39 8 64 Top 2
+SYMATTR Value ldoBehav
+SYMATTR SpiceLine vSet=2.8 rOn=1 iq=40u
+SYMATTR Prefix X
+PIN -48 0 LEFT 8
+PINATTR PinName in
+PINATTR SpiceOrder 1
+PIN 64 -16 RIGHT 8
+PINATTR PinName out
+PINATTR SpiceOrder 2
+PIN 64 16 RIGHT 8
+PINATTR PinName gnd
+PINATTR SpiceOrder 3

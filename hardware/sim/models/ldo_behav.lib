@@ -1,0 +1,7 @@
+﻿* Behavioral LDO: regulates to vSet, drops out as vin - iout*rOn
+* rOn approximates dropout (ME6211: ~100 mV at 100 mA -> ~1 ohm; confirm in datasheet)
+.subckt ldoBehav in out gnd vSet=2.8 rOn=1 iq=40u
+B1 n1 gnd V=min(vSet, V(in,gnd) - I(Vs)*rOn)
+Vs n1 out 0
+B2 in gnd I=I(Vs) + iq
+.ends ldoBehav
